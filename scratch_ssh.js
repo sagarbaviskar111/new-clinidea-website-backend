@@ -7,9 +7,18 @@ console.log('Connecting to server...');
 conn.on('ready', () => {
   console.log('SSH connection ready!');
   
-  conn.exec('tail -n 100 /root/.pm2/logs/clinidea-backend-error.log', (err, stream) => {
+  const setupScript = `
+    cd /var/www/clinidea
+    echo "Running npm install in root..."
+    npm install
+    echo "Running npm run build..."
+    npm run build
+  `;
+  
+  conn.exec(setupScript, (err, stream) => {
     if (err) throw err;
-    stream.on('close', () => {
+    stream.on('close', (code) => {
+      console.log(`Build process exited with code ${code}`);
       conn.end();
     });
     stream.on('data', (data) => process.stdout.write(data));
