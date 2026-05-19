@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payment Receipt</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      padding: 40px;
+      color: #333;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #0D9488;
+      padding-bottom: 20px;
+    }
+    .header h1 {
+      margin: 0;
+      color: #0D9488;
+      font-size: 28px;
+    }
+    .header p {
+      margin: 5px 0 0;
+      color: #666;
+    }
+    .receipt-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 30px;
+      font-weight: bold;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px 15px;
+      text-align: left;
+    }
+    th {
+      background-color: #f8fafc;
+      font-weight: 600;
+      color: #333;
+    }
+    .section-title {
+      background-color: #0D9488 !important;
+      color: white !important;
+      font-weight: bold;
+      text-align: center;
+      font-size: 16px;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 50px;
+      font-size: 12px;
+      color: #888;
+    }
+    .signature-box {
+      margin-top: 40px;
+      border: 1px solid #0D9488;
+      padding: 15px;
+      width: 300px;
+      border-radius: 8px;
+      background: #f0fdfa;
+    }
+    .signature-title {
+      font-weight: bold;
+      color: #0D9488;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .signature-stamp {
+      color: #0369a1;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Clinidea Education</h1>
+    <p>Transforming Aspirations into Careers</p>
+  </div>
+
+  <div class="receipt-meta">
+    <div>Receipt No: {{receiptNumber}}</div>
+    <div>Date: {{paymentDate}}</div>
+  </div>
+
+  <table>
+    <tr><td colspan="2" class="section-title">Student &amp; Payment Details</td></tr>
+    <tr><td width="40%"><strong>Student Name</strong></td><td>{{studentName}}</td></tr>
+    <tr><td><strong>Payment ID (Transaction)</strong></td><td>{{transactionId}}</td></tr>
+    <tr><td><strong>Mobile No</strong></td><td>{{studentPhone}}</td></tr>
+    <tr><td><strong>Email Add</strong></td><td>{{studentEmail}}</td></tr>
+    <tr><td><strong>Course</strong></td><td>{{courseName}}</td></tr>
+    <tr><td><strong>Fees Payment Method</strong></td><td>{{paymentType}}</td></tr>
+    <tr><td><strong>Total Fees</strong></td><td>₹{{totalFees}}</td></tr>
+    <tr><td><strong>Fees Paid</strong></td><td>₹{{amountPaid}}</td></tr>
+    <tr><td><strong>Fees Pending</strong></td><td>₹{{feesPending}}</td></tr>
+    <tr><td><strong>Payment Mode</strong></td><td>{{paymentMethod}}</td></tr>
+    
+    <tr><td colspan="2" class="section-title">Clinidea Education Authorized</td></tr>
+    <tr><td><strong>Name:</strong></td><td>Tushar Patil</td></tr>
+    <tr><td><strong>Email:</strong></td><td>admin@clinidea.in</td></tr>
+    <tr><td><strong>Designation:</strong></td><td>Founder</td></tr>
+    <tr>
+      <td><strong>Digital Signature</strong></td>
+      <td>
+        <div class="signature-stamp">
+          <strong>✓ Digitally Signed</strong><br/>
+          By: Tushar Patil<br/>
+          Date: {{paymentDate}}<br/>
+          Time: {{paymentTime}}
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <p><strong>#This is an electronically generated receipt with an authorized cryptographic digital signature.</strong></p>
+
+</body>
+</html>

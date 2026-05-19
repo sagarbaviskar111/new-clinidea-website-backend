@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Internship Certificate</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap');
+        body { margin: 0; padding: 0; background: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Inter', sans-serif; }
+        .certificate { width: 1056px; height: 816px; position: relative; background: #fff; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .accent { position: absolute; left: 0; top: 0; bottom: 0; width: 40px; background: #0f766e; }
+        .accent-corner { position: absolute; right: -50px; top: -50px; width: 150px; height: 150px; background: rgba(15, 118, 110, 0.1); transform: rotate(45deg); }
+        .content { margin-left: 40px; padding: 60px 80px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-family: 'Merriweather', serif; font-size: 24px; font-weight: bold; color: #111; }
+        .logo span { color: #0f766e; }
+        .type { background: #f0fdfa; color: #0f766e; padding: 8px 16px; border-radius: 4px; font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .main { text-align: left; margin-top: 40px; flex-grow: 1; }
+        .title { font-family: 'Merriweather', serif; font-size: 52px; font-weight: 700; color: #111; margin-bottom: 40px; line-height: 1.1; }
+        .presented { font-size: 18px; color: #555; margin-bottom: 10px; }
+        .name { font-size: 42px; font-weight: 700; color: #0f766e; margin-bottom: 20px; }
+        
+        .description { font-size: 18px; line-height: 1.7; color: #444; max-width: 800px; margin-top: 30px; }
+        .course { font-weight: 700; color: #111; }
+        
+        .footer { display: flex; justify-content: flex-start; gap: 80px; margin-top: 60px; }
+        .footer-block { width: 220px; }
+        .signature { height: 40px; border-bottom: 1px solid #ccc; margin-bottom: 10px; }
+        .footer-text { font-size: 14px; font-weight: 600; color: #333; }
+        .footer-sub { font-size: 12px; color: #777; }
+        
+        .meta { margin-top: auto; padding-top: 30px; border-top: 1px solid #eee; display: flex; justify-content: space-between; font-size: 12px; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <div class="accent"></div>
+        <div class="accent-corner"></div>
+        <div class="content">
+            <div class="header">
+                <div class="logo">Clinidea <span>Education</span></div>
+                <div class="type">Internship Program</div>
+            </div>
+            
+            <div class="main">
+                <div class="title">Certificate of <br>Internship</div>
+                <div class="presented">This is awarded to</div>
+                <div class="name">{{studentName}}</div>
+                
+                <div class="description">
+                    in recognition of their successful completion of the intensive internship program in <span class="course">{{courseName}}</span>. During this period, the candidate demonstrated excellent skills, dedication, and professional growth.
+                </div>
+            </div>
+            
+            <div class="footer">
+                <div class="footer-block">
+                    <div class="signature"></div>
+                    <div class="footer-text">Operations Head</div>
+                    <div class="footer-sub">Clinidea Education</div>
+                </div>
+                <div class="footer-block">
+                    <div class="signature" style="display:flex; align-items:end; font-family:'Merriweather',serif; font-size:18px;">{{issueDate}}</div>
+                    <div class="footer-text">Date of Issue</div>
+                </div>
+            </div>
+            
+            <div class="meta" style="align-items: flex-end;">
+                <div>
+                    <div>ID: {{certificateId}}</div>
+                    <div>Verify: clinidea.com/verify</div>
+                </div>
+                <div>
+                    <img src="{{qrCode}}" alt="Verify QR Code" style="width: 70px; height: 70px;" />
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

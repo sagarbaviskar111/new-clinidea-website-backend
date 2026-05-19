@@ -1,0 +1,641 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Lead {
+  id              Int      @id @default(autoincrement())
+  name            String
+  phone           String
+  email           String
+  courseInterest  String   @map("course_interest")
+  message         String?
+  source          String   @default("website")
+  status          String   @default("New")
+  notes           String?
+  reminderCount   Int      @default(0) @map("reminder_count")
+  lastReminderAt  DateTime? @map("last_reminder_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([phone])
+  @@index([email])
+  @@map("leads")
+}
+
+model Admin {
+  id       Int    @id @default(autoincrement())
+  email    String @unique
+  password String
+  role     String @default("superadmin")
+  
+  auditLogs AdminAuditLog[]
+  batchMentors BatchMentor[]
+  deleteRequests ContentDeleteRequest[]
+  classSessions ClassSession[]
+
+  @@map("admins")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  fullName  String   @map("full_name")
+  phone     String   @unique
+  email     String   @unique
+  password  String
+  role      String   @default("student")
+  status    String   @default("active")
+  registrationFeePaid Boolean @default(false) @map("registration_fee_paid")
+  registrationScreenshot String? @map("registration_screenshot")
+  registrationReceiptUrl String? @map("registration_receipt_url")
+  isRegistrationConfirmed Boolean @default(false) @map("is_registration_confirmed")
+  registeredCourse String? @map("registered_course")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  enrollments Enrollment[]
+  profile     StudentProfile?
+  documents   StudentDocument[]
+  attendances Attendance[]
+  certificates Certificate[]
+  referralsMade Referral[] @relation("ReferralsMade")
+  referredBy    Referral[] @relation("ReferredBy")
+  payments      Payment[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Enrollment {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @map("user_id")
+  courseName       String   @map("course_name")
+  batchId          Int?     @map("batch_id")
+  paymentType      String   @map("payment_type")
+  amount           Float
+  paymentStatus        String    @default("pending") @map("payment_status")
+  transactionId        String?   @map("transaction_id")
+  paymentScreenshotUrl String?   @map("payment_screenshot_url")
+  
+  totalFees            Float     @default(0) @map("total_fees")
+  feesPaid             Float     @default(0) @map("fees_paid")
+  feesPending          Float     @default(0) @map("fees_pending")
+  installmentCount     Int       @default(1) @map("installment_count")
+  
+  installmentNumber    Int       @default(1) @map("installment_number")
+  nextInstallmentDate  DateTime? @map("next_installment_date")
+  reminderSent         Boolean   @default(false) @map("reminder_sent")
+  
+  enrollmentStatus     String    @default("pending") @map("enrollment_status")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  user  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch Batch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([batchId])
+  @@map("enrollments")
+}
+
+model StudentProfile {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @unique @map("user_id")
+  alternatePhone   String?  @map("alternate_phone")
+  dateOfBirth      DateTime? @map("date_of_birth")
+  gender           String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  qualification    String?
+  specialization   String?
+  collegeName      String?  @map("college_name")
+  graduationYear   String?  @map("graduation_year")
+  cgpa             String?
+  experienceStatus String?  @map("experience_status")
+  companyName      String?  @map("company_name")
+  jobRole          String?  @map("job_role")
+  totalExperience  String?  @map("total_experience")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("student_profiles")
+}
+
+model StudentDocument {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  documentType String   @map("document_type")
+  fileUrl      String   @map("file_url")
+  status       String   @default("not_verified")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("student_documents")
+}
+
+model Course {
+  id           Int      @id @default(autoincrement())
+  slug         String   @unique @default(cuid())
+  name         String
+  description  String?
+  duration     String?
+  fees         Float?
+  syllabus     String?
+  brochureUrl  String?  @map("brochure_url")
+  youtubeUrl   String?  @map("youtube_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  batches      Batch[]
+  certificates Certificate[]
+  blogs        Blog[]
+
+  @@map("courses")
+}
+
+model Batch {
+  id           Int      @id @default(autoincrement())
+  courseId     Int      @map("course_id")
+  batchName    String   @map("batch_name")
+  startDate    DateTime? @map("start_date")
+  endDate      DateTime? @map("end_date")
+  classTime    String?  @map("class_time")
+  driveFolderId String? @map("drive_folder_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  batchMentors BatchMentor[]
+  enrollments  Enrollment[]
+  sessions     ClassSession[]
+  certificates Certificate[]
+  lmsContents  LMSContent[]
+
+  @@index([courseId])
+  @@map("batches")
+}
+
+model ClassSession {
+  id           Int      @id @default(autoincrement())
+  batchId      Int      @map("batch_id")
+  sessionDate  DateTime @map("session_date")
+  sessionTime  String   @map("session_time")
+  meetingLink  String?  @map("meeting_link")
+  title        String   @default("Live Class")
+  status       String   @default("upcoming") // upcoming, live, completed
+  recurrence   String   @default("none")
+  mentorId     Int?     @map("mentor_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  batch        Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  mentor       Admin?   @relation(fields: [mentorId], references: [id], onDelete: SetNull)
+  attendances  Attendance[]
+
+  @@index([batchId])
+  @@map("class_sessions")
+}
+
+model Attendance {
+  id             Int          @id @default(autoincrement())
+  userId         Int          @map("user_id")
+  classSessionId Int          @map("class_session_id")
+  status         String       @default("absent") 
+  markedAt       DateTime     @default(now()) @map("marked_at")
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session        ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, classSessionId])
+  @@index([classSessionId])
+  @@map("attendance")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  title       String
+  message     String
+  isRead      Boolean  @default(false) @map("is_read")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("notifications")
+}
+
+model Certificate {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  courseId        Int      @map("course_id")
+  batchId         Int?     @map("batch_id")
+  certificateType String   @map("certificate_type") 
+  certificateId   String   @unique @map("certificate_id")
+  issueDate       DateTime @map("issue_date")
+  startDate       DateTime? @map("start_date")
+  endDate         DateTime? @map("end_date")
+  fileUrl         String   @map("file_url")
+  status          String   @default("generated") 
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  batch           Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([certificateId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([batchId])
+  @@map("certificates")
+}
+
+model Event {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique @default(cuid())
+  title       String
+  description String?
+  eventType   String   @map("event_type") 
+  eventDate   DateTime @map("event_date")
+  eventTime   String   @map("event_time")
+  durationMinutes Int? @map("duration_minutes") // For quizzes
+  meetingLink String?  @map("meeting_link")
+  imageUrl    String?  @map("image_url")
+  youtubeUrl  String?  @map("youtube_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  registrations EventRegistration[]
+  questions     QuizQuestion[]
+  quizAttempts  QuizAttempt[]
+
+  @@map("events")
+}
+
+model QuizQuestion {
+  id            Int      @id @default(autoincrement())
+  eventId       Int      @map("event_id")
+  questionText  String   @map("question_text")
+  optionsJson   String   @map("options_json")  // JSON array of strings
+  correctOption String   @map("correct_option") // The exact string of the correct option
+  marks         Int      @default(1)
+  
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@index([eventId])
+  @@map("quiz_questions")
+}
+
+model QuizAttempt {
+  id            Int      @id @default(autoincrement())
+  eventId       Int      @map("event_id")
+  name          String
+  email         String
+  phone         String
+  qualification String?
+  location      String?
+  courseInterest String? @map("course_interest")
+  
+  startTime     DateTime @default(now()) @map("start_time")
+  endTime       DateTime? @map("end_time")
+  score         Int?
+  status        String   @default("in_progress") 
+  lastPausedAt  DateTime? @map("last_paused_at")
+  responsesJson String?   @map("responses_json")
+  
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, email])
+  @@unique([eventId, phone])
+  @@map("quiz_attempts")
+}
+
+model EventRegistration {
+  id        Int      @id @default(autoincrement())
+  eventId   Int      @map("event_id")
+  name      String
+  phone     String
+  email     String
+  createdAt    DateTime @default(now()) @map("created_at")
+  reminderSent Boolean  @default(false) @map("reminder_sent")
+  whatsappReminderSent Boolean @default(false) @map("whatsapp_reminder_sent")
+  reminder1DaySent Boolean @default(false) @map("reminder_1day_sent")
+  reminderMorningSent Boolean @default(false) @map("reminder_morning_sent")
+  reminderMiddaySent Boolean @default(false) @map("reminder_midday_sent")
+  reminder1HourSent Boolean @default(false) @map("reminder_1hour_sent")
+  dripStage    Int      @default(0) @map("drip_stage")
+  lastDripSentAt DateTime? @map("last_drip_sent_at")
+
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("event_registrations")
+}
+
+// -------- CMS MODULE --------
+model PageContent {
+  id          Int      @id @default(autoincrement())
+  page        String   
+  sectionKey  String   
+  title       String?  
+  content     String?  
+  imageUrl    String?  
+  order       Int      @default(0) 
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([page, sectionKey])
+  @@map("page_contents")
+}
+
+// -------- BLOG MODULE --------
+model BlogCategory {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique @default(cuid())
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  blogs       Blog[]
+
+  @@map("blog_categories")
+}
+
+model Blog {
+  id              Int      @id @default(autoincrement())
+  title           String
+  slug            String   @unique @default(cuid())
+  content         String   
+  metaTitle       String?  @map("meta_title")
+  metaDescription String?  @map("meta_description")
+  keywords        String?
+  featuredImage   String?  @map("featured_image")
+  isPublished     Boolean  @default(false) @map("is_published")
+  categoryId      Int?     @map("category_id")
+  relatedCourseId Int?     @map("related_course_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  category        BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  course          Course?       @relation(fields: [relatedCourseId], references: [id], onDelete: SetNull)
+
+  @@map("blogs")
+}
+
+// -------- TESTIMONIALS MODULE --------
+model Testimonial {
+  id          Int      @id @default(autoincrement())
+  studentName String   @map("student_name")
+  reviewText  String   @map("review_text")
+  rating      Int      @default(5)
+  imageUrl    String?  @map("image_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("testimonials")
+}
+
+// -------- PLACEMENTS MODULE --------
+model Placement {
+  id          Int      @id @default(autoincrement())
+  studentName String   @map("student_name")
+  imageUrl    String   @map("image_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("placements")
+}
+
+// -------- GROWTH MODULE --------
+model Coupon {
+  id                Int      @id @default(autoincrement())
+  code              String   @unique
+  discountPercent   Float    @map("discount_percent")
+  maxUses           Int?     @map("max_uses")
+  usedCount         Int      @default(0) @map("used_count")
+  expiryDate        DateTime? @map("expiry_date")
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("coupons")
+}
+
+model Referral {
+  id             Int      @id @default(autoincrement())
+  referrerId     Int      @map("referrer_id")
+  referredUserId Int      @map("referred_user_id")
+  status         String   @default("pending")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  referrer       User     @relation("ReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUser   User     @relation("ReferredBy", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@map("referrals")
+}
+
+// -------- PAYMENT MODULE --------
+model Payment {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  courseName      String   @map("course_name")
+  amount          Float
+  paymentMethod   String?  @map("payment_method")
+  paymentStatus   String   @default("pending") @map("payment_status")
+  transactionId   String?  @map("transaction_id")
+  fileUrl         String?  @map("file_url")
+  receiptNumber   Int?     @unique @map("receipt_number")
+  paymentDate     DateTime @default(now()) @map("payment_date")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+// -------- AUDIT MODULE --------
+model AdminAuditLog {
+  id        Int      @id @default(autoincrement())
+  adminId   Int      @map("admin_id")
+  action    String
+  endpoint  String
+  payload   String?  // Store JSON of the request body if safe
+  createdAt DateTime @default(now()) @map("created_at")
+
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("admin_audit_logs")
+}
+
+// -------- PAYMENT SETTINGS MODULE --------
+model PaymentSetting {
+  id               Int      @id @default(autoincrement())
+  bankName         String?  @map("bank_name")
+  accountNumber    String?  @map("account_number")
+  ifscCode         String?  @map("ifsc_code")
+  accountHolder    String?  @map("account_holder")
+  upiId            String?  @map("upi_id")
+  qrCodeUrl        String?  @map("qr_code_url")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("payment_settings")
+}
+
+// -------- FINANCIAL MANAGEMENT MODULE --------
+model Expense {
+  id          Int      @id @default(autoincrement())
+  title       String
+  category    String   // Salary, Marketing, Hosting, Software, Misc
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("expenses")
+}
+
+model AdditionalIncome {
+  id          Int      @id @default(autoincrement())
+  title       String
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("additional_incomes")
+}
+
+// -------- HR CAMPAIGN MODULE --------
+model EmailAccount {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  password    String   
+  smtpHost    String   @default("smtp.office365.com")
+  smtpPort    Int      @default(587)
+  isActive    Boolean  @default(true)
+  dailyLimit  Int      @default(500)
+  sentToday   Int      @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  campaigns   HRCampaign[]
+  @@map("email_accounts")
+}
+
+model HRContact {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  name        String?
+  company     String?
+  tags        String?  
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  campaignRecipients HRCampaignRecipient[]
+  @@map("hr_contacts")
+}
+
+model HRCampaign {
+  id             Int      @id @default(autoincrement())
+  name           String
+  subject        String
+  body           String   
+  emailAccountId Int?     @map("email_account_id") 
+  status         String   @default("draft") 
+  totalRecipients Int     @default(0)
+  sentCount      Int      @default(0)
+  failedCount    Int      @default(0)
+  rateLimitLimit Int      @default(50) 
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  recipients     HRCampaignRecipient[]
+  attachments    HRCVAttachment[]
+
+  @@map("hr_campaigns")
+}
+
+model HRCampaignRecipient {
+  id              Int      @id @default(autoincrement())
+  campaignId      Int      @map("campaign_id")
+  hrContactId     Int      @map("hr_contact_id")
+  status          String   @default("pending") 
+  error           String?
+  cvMappingId     String?  
+  sentAt          DateTime?
+  reminder1DaySent Boolean @default(false)
+  reminder3DaySent Boolean @default(false)
+  reminder7DaySent Boolean @default(false)
+  
+  campaign        HRCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  hrContact       HRContact  @relation(fields: [hrContactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, hrContactId])
+  @@map("hr_campaign_recipients")
+}
+
+model HRCVAttachment {
+  id              Int      @id @default(autoincrement())
+  campaignId      Int      @map("campaign_id")
+  mappingId       String   
+  fileName        String
+  fileUrl         String
+
+  campaign        HRCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("hr_cv_attachments")
+}
+
+model LMSContent {
+  id              Int      @id @default(autoincrement())
+  batchId         Int      @map("batch_id")
+  title           String
+  description     String?
+  contentType     String   @map("content_type") // video, pdf, ppt, doc
+  category        String   @default("Additional Study Material")
+  driveFileId     String   @map("drive_file_id")
+  driveWebViewLink String? @map("drive_web_view_link")
+  moduleName      String   @default("General") @map("module_name")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  batch           Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  deleteRequests  ContentDeleteRequest[]
+
+  @@index([batchId])
+  @@map("lms_contents")
+}
+
+model BatchMentor {
+  id           Int      @id @default(autoincrement())
+  batchId      Int      @map("batch_id")
+  mentorId     Int      @map("mentor_id")
+  moduleName   String   @map("module_name")
+  folderId     String?  @map("folder_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  batch        Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  mentor       Admin    @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, mentorId, moduleName])
+  @@index([batchId])
+  @@index([mentorId])
+  @@map("batch_mentors")
+}
+
+model ContentDeleteRequest {
+  id           Int      @id @default(autoincrement())
+  contentId    Int      @map("content_id")
+  mentorId     Int      @map("mentor_id")
+  reason       String
+  status       String   @default("pending") // pending, approved, rejected
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  content      LMSContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  mentor       Admin      @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@index([contentId])
+  @@index([mentorId])
+  @@map("content_delete_requests")
+}

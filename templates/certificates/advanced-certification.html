@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Advanced Certification</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400;700&display=swap');
+        body { margin: 0; padding: 0; background: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Lato', sans-serif; }
+        .certificate { width: 1056px; height: 816px; position: relative; padding: 50px; box-sizing: border-box; background: #fdfdfd; }
+        .bg-pattern { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 15px solid #2c3e50; opacity: 0.1; }
+        .border { border: 2px solid #d4af37; height: 100%; padding: 40px; box-sizing: border-box; text-align: center; position: relative; background: white; z-index: 1; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .logo { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: bold; color: #2c3e50; text-transform: uppercase; letter-spacing: 2px; }
+        .cert-type { font-size: 14px; color: #d4af37; text-transform: uppercase; font-weight: bold; letter-spacing: 2px; border: 1px solid #d4af37; padding: 5px 15px; border-radius: 20px; }
+        
+        .title { font-family: 'Playfair Display', serif; font-size: 56px; font-weight: 700; color: #2c3e50; margin-top: 30px; letter-spacing: 1px; }
+        .presented { font-size: 20px; margin-top: 40px; color: #777; font-style: italic; font-family: 'Playfair Display', serif; }
+        .name { font-family: 'Playfair Display', serif; font-size: 48px; font-weight: bold; color: #d4af37; margin: 15px 0; }
+        .line-name { width: 60%; height: 2px; background: linear-gradient(to right, transparent, #d4af37, transparent); margin: 0 auto; }
+        
+        .description { font-size: 18px; line-height: 1.6; color: #444; max-width: 800px; margin: 30px auto 20px; }
+        .course { font-size: 26px; font-weight: bold; color: #2c3e50; margin: 15px 0; font-family: 'Playfair Display', serif; }
+        
+        .footer { display: flex; justify-content: space-around; position: absolute; bottom: 60px; left: 0; right: 0; }
+        .footer-block { text-align: center; width: 200px; }
+        .line { border-top: 2px solid #2c3e50; margin-bottom: 10px; width: 100%; }
+        .footer-text { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #2c3e50; letter-spacing: 1px; }
+        
+        .meta { position: absolute; bottom: 20px; left: 40px; right: 40px; font-size: 11px; color: #999; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <div class="bg-pattern"></div>
+        <div class="border">
+            <div class="header">
+                <div class="logo">Clinidea Education</div>
+                <div class="cert-type">Advanced Certification</div>
+            </div>
+            
+            <div class="title">CERTIFICATE OF EXCELLENCE</div>
+            
+            <div class="presented">Proudly presented to</div>
+            <div class="name">{{studentName}}</div>
+            <div class="line-name"></div>
+            
+            <div class="description">
+                For outstanding performance and successful completion of the advanced curriculum requirements in
+            </div>
+            
+            <div class="course">{{courseName}}</div>
+            
+            <div class="footer">
+                <div class="footer-block">
+                    <div class="line"></div>
+                    <div class="footer-text">Date: {{issueDate}}</div>
+                </div>
+                <div class="footer-block">
+                    <div style="width: 80px; height: 80px; background: #f9f9f9; border: 2px dashed #d4af37; border-radius: 50%; margin: -40px auto 10px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #d4af37;">SEAL</div>
+                </div>
+                <div class="footer-block">
+                    <div class="line"></div>
+                    <div class="footer-text">Program Director</div>
+                </div>
+            </div>
+            
+            <div class="meta" style="align-items: flex-end;">
+                <div>
+                    <span style="display:block">Certificate ID: {{certificateId}}</span>
+                    <span style="display:block">Verify authenticity at clinidea.com/verify</span>
+                </div>
+                <div>
+                    <img src="{{qrCode}}" alt="Verify QR Code" style="width: 70px; height: 70px; border: 1px solid #ddd; padding: 2px;" />
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

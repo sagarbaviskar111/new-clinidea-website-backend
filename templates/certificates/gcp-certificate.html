@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GCP Certificate</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Montserrat:wght@300;400;600&display=swap');
+        body { margin: 0; padding: 0; background: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Montserrat', sans-serif; }
+        .certificate { width: 1056px; height: 816px; position: relative; padding: 40px; box-sizing: border-box; background: #fff; }
+        .border { border: 4px solid #0056b3; height: 100%; padding: 40px; box-sizing: border-box; text-align: center; position: relative; }
+        .inner-border { border: 1px solid #0056b3; height: 100%; padding: 40px; position: relative; }
+        .logo { font-family: 'Cinzel', serif; font-size: 32px; font-weight: bold; color: #0056b3; margin-bottom: 20px; }
+        .title { font-family: 'Cinzel', serif; font-size: 48px; font-weight: bold; color: #222; margin-top: 20px; letter-spacing: 2px; }
+        .subtitle { font-size: 18px; color: #666; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .presented { font-size: 18px; margin-top: 40px; color: #555; }
+        .name { font-family: 'Cinzel', serif; font-size: 42px; font-weight: bold; color: #0056b3; margin: 20px 0; border-bottom: 2px solid #ccc; display: inline-block; padding: 0 40px 10px; }
+        .description { font-size: 16px; line-height: 1.6; color: #444; max-width: 700px; margin: 20px auto; }
+        .course { font-size: 24px; font-weight: bold; color: #222; margin: 15px 0; }
+        .footer { display: flex; justify-content: space-between; position: absolute; bottom: 40px; left: 60px; right: 60px; }
+        .footer-block { text-align: center; width: 200px; }
+        .line { border-top: 1px solid #333; margin-bottom: 10px; }
+        .footer-text { font-size: 14px; font-weight: 600; }
+        .meta-info { position: absolute; bottom: -20px; left: 0; right: 0; font-size: 12px; color: #888; display: flex; justify-content: space-between; }
+        
+        .badge { position: absolute; top: 40px; right: 40px; width: 80px; height: 80px; background: #0056b3; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: white; font-family: 'Cinzel', serif; font-weight: bold; text-align: center; line-height: 1.2; font-size: 12px; border: 4px solid #fff; box-shadow: 0 0 0 2px #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <div class="border">
+            <div class="inner-border">
+                <div class="badge">GCP<br>Certified</div>
+                <div class="logo">CLINIDEA EDUCATION</div>
+                <div class="title">CERTIFICATE</div>
+                <div class="subtitle">OF COMPLETION</div>
+                
+                <div class="presented">This is to certify that</div>
+                <div class="name">{{studentName}}</div>
+                
+                <div class="description">
+                    has successfully completed the comprehensive training program and demonstrated proficiency in Good Clinical Practice.
+                </div>
+                
+                <div class="course">{{courseName}}</div>
+                
+                <div class="footer">
+                    <div class="footer-block">
+                        <div class="line"></div>
+                        <div class="footer-text">DATE OF ISSUE<br>{{issueDate}}</div>
+                    </div>
+                    <div class="footer-block">
+                        <div class="line"></div>
+                        <div class="footer-text">AUTHORIZED SIGNATURE</div>
+                    </div>
+                </div>
+                
+                <div class="meta-info" style="align-items: flex-end;">
+                    <div>
+                        <span>Certificate ID: {{certificateId}}</span><br>
+                        <span>Verify at: clinidea.com/verify</span>
+                    </div>
+                    <div>
+                        <img src="{{qrCode}}" alt="Verify QR Code" style="width: 80px; height: 80px; border: 1px solid #ccc; padding: 2px; background: white;" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
