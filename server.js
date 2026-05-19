@@ -69,6 +69,15 @@ app.use(cors({
   optionsSuccessStatus: 204
 }));
 app.use(express.json());
+
+// URL Rewrite Middleware for Nginx reverse proxy stripping '/api' prefix
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api') && !req.url.startsWith('/uploads')) {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
 app.use('/api/', apiLimiter);
 
 app.use('/uploads/certificates', express.static(path.join(__dirname, 'uploads', 'certificates')));
