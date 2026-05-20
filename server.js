@@ -3272,6 +3272,7 @@ app.post('/api/admin/blogs', authenticateAdmin, async (req, res) => {
     });
     return res.status(201).json(blog);
   } catch (err) {
+    console.error('Blog create error:', err);
     return res.status(500).json({ error: 'Failed to create blog' });
   }
 });
@@ -3285,6 +3286,7 @@ app.put('/api/admin/blogs/:id', authenticateAdmin, async (req, res) => {
     });
     return res.json(blog);
   } catch (err) {
+    console.error('Blog update error:', err);
     return res.status(500).json({ error: 'Failed to update blog' });
   }
 });

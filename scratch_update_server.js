@@ -8,18 +8,17 @@ conn.on('ready', () => {
   console.log('SSH connection ready!');
   
   const setupScript = `
-    echo "=== PM2 STATUS ==="
-    pm2 status
-    echo "=== PM2 LOGS ==="
+    sed -i "s/return res.status(500).json({ error: 'Failed to create blog' });/console.error('Blog create error:', err); return res.status(500).json({ error: 'Failed to create blog' });/g" /var/www/clinidea/backend/server.js
+    sed -i "s/return res.status(500).json({ error: 'Failed to update blog' });/console.error('Blog update error:', err); return res.status(500).json({ error: 'Failed to update blog' });/g" /var/www/clinidea/backend/server.js
+    pm2 reload clinidea-backend
+    sleep 2
     pm2 logs clinidea-backend --lines 50 --nostream
-    echo "=== NGINX CONFIG ==="
-    grep -R "client_max_body_size" /etc/nginx/ || echo "client_max_body_size not found in Nginx config!"
   `;
   
   conn.exec(setupScript, (err, stream) => {
     if (err) throw err;
     stream.on('close', (code) => {
-      console.log('Build process exited with code ' + code);
+      console.log('Command process exited with code ' + code);
       conn.end();
     });
     stream.on('data', (data) => process.stdout.write(data));
