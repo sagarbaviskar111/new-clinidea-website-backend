@@ -9,8 +9,21 @@ const path = require('path');
 
 const prisma = new PrismaClient();
 
-// Memory storage for direct-to-drive uploads
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB limit for videos
+// Disk storage for large file uploads to prevent memory issues and Network Errors
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = path.join(__dirname, '..', 'uploads', 'temp');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'lms-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage: storage, limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB limit for videos
 
 const BASE_DRIVE_FOLDER_ID = process.env.BASE_DRIVE_FOLDER_ID || '1CU5-fkzNx34OcrXYv0JLN4otc3k43WXm';
 
@@ -199,8 +212,15 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     const ext = path.extname(file.originalname);
     const driveFileName = ext ? `${finalTitle}${ext}` : file.originalname;
 
-    // Upload directly to Drive
-    const driveResult = await uploadToDrive(file.buffer, driveFileName, file.mimetype, targetFolderId);
+    // Upload to Drive
+    let driveResult;
+    try {
+      driveResult = await uploadFileToDrive(file.path, driveFileName, file.mimetype, targetFolderId);
+    } finally {
+      if (file && fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    }
 
     // Determine content type
     let contentType = 'doc';
@@ -277,8 +297,15 @@ router.post('/mentor/live/finish-recording', authenticateMentor, upload.single('
 
     driveFileName = `${driveFileName.replace(/\s+/g, '_')}.webm`;
     
-    // Upload buffer directly to Drive
-    const driveResult = await uploadToDrive(file.buffer, driveFileName, 'video/webm', driveFolderId);
+    // Upload to Drive
+    let driveResult;
+    try {
+      driveResult = await uploadFileToDrive(file.path, driveFileName, file.mimetype || 'video/webm', driveFolderId);
+    } finally {
+      if (file && fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    }
 
     // Create LMS content
     const content = await prisma.lMSContent.create({
