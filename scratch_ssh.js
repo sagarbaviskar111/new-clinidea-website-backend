@@ -9,6 +9,8 @@ conn.on('ready', () => {
   
   const setupScript = `
     cd /var/www/clinidea
+    echo "Running git pull..."
+    git pull
     echo "Running npm install in root..."
     npm install
     echo "Running npm run build..."
@@ -18,7 +20,7 @@ conn.on('ready', () => {
   conn.exec(setupScript, (err, stream) => {
     if (err) throw err;
     stream.on('close', (code) => {
-      console.log(`Build process exited with code ${code}`);
+      console.log('Build process exited with code ' + code);
       conn.end();
     });
     stream.on('data', (data) => process.stdout.write(data));
