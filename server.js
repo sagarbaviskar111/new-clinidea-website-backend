@@ -220,20 +220,20 @@ const authenticateAdmin = async (req, res, next) => {
     // RBAC for lead_manager
     if (req.adminRole === 'lead_manager') {
       const allowedPrefixes = [
-        '/api/admin/leads',
-        '/api/admin/dashboard',
-        '/api/admin/documents',
-        '/api/events',
-        '/api/admin/events'
+        '/api/admin/leads', '/admin/leads',
+        '/api/admin/dashboard', '/admin/dashboard',
+        '/api/admin/documents', '/admin/documents',
+        '/api/events', '/events',
+        '/api/admin/events', '/admin/events'
       ];
-      // Use req.url instead of req.originalUrl because of the rewrite middleware
-      const isAllowed = allowedPrefixes.some(prefix => req.url.startsWith(prefix));
+      const checkUrl = req.originalUrl || req.url;
+      const isAllowed = allowedPrefixes.some(prefix => checkUrl.startsWith(prefix) || req.url.startsWith(prefix));
       if (!isAllowed) {
         return res.status(403).json({ error: 'Forbidden: Insufficient privileges.' });
       }
       
       // Block write operations on events for lead_manager
-      if (req.url.startsWith('/api/admin/events') && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
+      if ((checkUrl.startsWith('/api/admin/events') || checkUrl.startsWith('/admin/events')) && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
         return res.status(403).json({ error: 'Forbidden: You do not have permission to modify events.' });
       }
     }
@@ -241,15 +241,16 @@ const authenticateAdmin = async (req, res, next) => {
     // RBAC for mentor
     if (req.adminRole === 'mentor') {
       const allowedPrefixes = [
-        '/api/admin/sessions',
-        '/api/admin/create-class',
-        '/api/admin/batches',
-        '/api/admin/attendance',
-        '/api/admin/dashboard',
-        '/api/mentor',
-        '/api/sessions'
+        '/api/admin/sessions', '/admin/sessions',
+        '/api/admin/create-class', '/admin/create-class',
+        '/api/admin/batches', '/admin/batches',
+        '/api/admin/attendance', '/admin/attendance',
+        '/api/admin/dashboard', '/admin/dashboard',
+        '/api/mentor', '/mentor',
+        '/api/sessions', '/sessions'
       ];
-      const isAllowed = allowedPrefixes.some(prefix => req.url.startsWith(prefix));
+      const checkUrl = req.originalUrl || req.url;
+      const isAllowed = allowedPrefixes.some(prefix => checkUrl.startsWith(prefix) || req.url.startsWith(prefix));
       if (!isAllowed) {
         return res.status(403).json({ error: 'Forbidden: Insufficient privileges.' });
       }
