@@ -3245,13 +3245,13 @@ app.get('/api/admin/blogs', authenticateAdmin, async (req, res) => {
 
 app.post('/api/admin/blogs', authenticateAdmin, async (req, res) => {
   try {
-    const { title, content, metaTitle, metaDescription, keywords, featuredImage, isPublished, categoryId, relatedCourseId } = req.body;
-    let slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    const { title, content, metaTitle, metaDescription, keywords, schemaMarkup, featuredImage, isPublished, categoryId, relatedCourseId } = req.body;
+    let slug = req.body.slug ? req.body.slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
     const existing = await prisma.blog.findUnique({ where: { slug } });
     if (existing) slug += `-${Date.now()}`;
 
     const blog = await prisma.blog.create({
-      data: { title, slug, content, metaTitle, metaDescription, keywords, featuredImage, isPublished, categoryId, relatedCourseId }
+      data: { title, slug, content, metaTitle, metaDescription, keywords, schemaMarkup, featuredImage, isPublished, categoryId, relatedCourseId }
     });
     return res.status(201).json(blog);
   } catch (err) {
@@ -3262,10 +3262,16 @@ app.post('/api/admin/blogs', authenticateAdmin, async (req, res) => {
 
 app.put('/api/admin/blogs/:id', authenticateAdmin, async (req, res) => {
   try {
-    const { title, content, metaTitle, metaDescription, keywords, featuredImage, isPublished, categoryId, relatedCourseId } = req.body;
+    const { title, content, metaTitle, metaDescription, keywords, schemaMarkup, featuredImage, isPublished, categoryId, relatedCourseId } = req.body;
+    
+    let slug = req.body.slug ? req.body.slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    // Ensure slug uniqueness if it changed
+    const existing = await prisma.blog.findFirst({ where: { slug, NOT: { id: parseInt(req.params.id) } } });
+    if (existing) slug += `-${Date.now()}`;
+
     const blog = await prisma.blog.update({
       where: { id: parseInt(req.params.id) },
-      data: { title, content, metaTitle, metaDescription, keywords, featuredImage, isPublished, categoryId, relatedCourseId }
+      data: { title, slug, content, metaTitle, metaDescription, keywords, schemaMarkup, featuredImage, isPublished, categoryId, relatedCourseId }
     });
     return res.json(blog);
   } catch (err) {

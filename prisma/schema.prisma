@@ -371,6 +371,7 @@ model Blog {
   metaTitle       String?  @map("meta_title")
   metaDescription String?  @map("meta_description")
   keywords        String?
+  schemaMarkup    String?  @map("schema_markup")
   featuredImage   String?  @map("featured_image")
   isPublished     Boolean  @default(false) @map("is_published")
   categoryId      Int?     @map("category_id")
