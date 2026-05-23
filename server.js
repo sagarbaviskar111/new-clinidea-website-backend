@@ -226,13 +226,14 @@ const authenticateAdmin = async (req, res, next) => {
         '/api/events',
         '/api/admin/events'
       ];
-      const isAllowed = allowedPrefixes.some(prefix => req.originalUrl.startsWith(prefix));
+      // Use req.url instead of req.originalUrl because of the rewrite middleware
+      const isAllowed = allowedPrefixes.some(prefix => req.url.startsWith(prefix));
       if (!isAllowed) {
         return res.status(403).json({ error: 'Forbidden: Insufficient privileges.' });
       }
       
       // Block write operations on events for lead_manager
-      if (req.originalUrl.startsWith('/api/admin/events') && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
+      if (req.url.startsWith('/api/admin/events') && ['POST', 'PUT', 'DELETE'].includes(req.method)) {
         return res.status(403).json({ error: 'Forbidden: You do not have permission to modify events.' });
       }
     }
@@ -248,7 +249,7 @@ const authenticateAdmin = async (req, res, next) => {
         '/api/mentor',
         '/api/sessions'
       ];
-      const isAllowed = allowedPrefixes.some(prefix => req.originalUrl.startsWith(prefix));
+      const isAllowed = allowedPrefixes.some(prefix => req.url.startsWith(prefix));
       if (!isAllowed) {
         return res.status(403).json({ error: 'Forbidden: Insufficient privileges.' });
       }
@@ -312,25 +313,7 @@ app.post('/api/admin/login', adminLoginLimiter, async (req, res) => {
   try {
     const admin = await prisma.admin.findUnique({ where: { email: email.toLowerCase() } });
     
-    // Log attempt via email
-    const loginAttemptHtml = `
-      <h3>Admin Login Attempt Detected</h3>
-      <p>A login attempt was made on the Clinidea Admin Panel.</p>
-      <ul>
-        <li><strong>Email Attempted:</strong> ${email}</li>
-        <li><strong>Time:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</li>
-        <li><strong>Status:</strong> ${admin && await bcrypt.compare(password, admin.password) ? '<span style="color:green;">SUCCESSFUL</span>' : '<span style="color:red;">FAILED</span>'}</li>
-      </ul>
-      <p>If this was not you, please investigate immediately.</p>
-    `;
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: 'admin@clinidea.in',
-      subject: `🚨 Security Alert: Admin Login Attempt (${email})`,
-      html: loginAttemptHtml
-    };
-    transporter.sendMail(mailOptions).catch(err => console.error("Admin alert email failed:", err));
+    // Admin login attempt email logic removed as per user request
 
     if (!admin) {
       return res.status(401).json({ error: 'Invalid credentials' });
