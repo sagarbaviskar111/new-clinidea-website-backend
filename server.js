@@ -640,6 +640,63 @@ app.delete('/api/admin/leads/:id', authenticateAdmin, async (req, res) => {
 
 // --------
 // STUDENT AUTH
+app.post('/api/admin/users/manual', authenticateAdmin, async (req, res) => {
+  try {
+    const { fullName, email, phone, password, registeredCourse } = req.body;
+    if (!fullName || !email || !phone || !password) {
+      return res.status(400).json({ error: 'All fields (fullName, email, phone, password) are required.' });
+    }
+
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, { phone }]
+      }
+    });
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'A user with this email or phone already exists.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await prisma.user.create({
+      data: {
+        fullName,
+        email,
+        phone,
+        password: hashedPassword,
+        role: 'student',
+        status: 'active',
+        registeredCourse: registeredCourse || null
+      }
+    });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: 'Welcome to Clinidea Education!',
+      html: `
+        <h3>Welcome to Clinidea Education!</h3>
+        <p>Dear ${user.fullName},</p>
+        <p>Your account has been created successfully by an administrator.</p>
+        <p>You can login at: <a href="https://clinidea.in/login">https://clinidea.in/login</a></p>
+        <p><strong>Email:</strong> ${user.email}<br/><strong>Password:</strong> ${password}</p>
+        <p>Please change your password after logging in for the first time.</p>
+        <br/>
+        <p>Best Regards,</p>
+        <p>Clinidea Education Team</p>
+      `
+    };
+    transporter.sendMail(mailOptions).catch(err => console.error("Welcome email failed:", err));
+
+    return res.status(201).json(user);
+  } catch (error) {
+    console.error('Failed to create user:', error);
+    return res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+
 app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
   try {
     const users = await prisma.user.findMany({
@@ -813,8 +870,8 @@ app.post('/api/admin/confirm-registration/:userId', authenticateAdmin, async (re
       course: 'Seat Booking Registration',
       method: 'One-Time',
       paymentMode: 'UPI/Bank Transfer',
-      totalFees: 500,
-      feesPaid: 500,
+      totalFees: 10000,
+      feesPaid: 10000,
       feesPending: 0
     });
 
@@ -833,7 +890,7 @@ app.post('/api/admin/confirm-registration/:userId', authenticateAdmin, async (re
         to: user.email,
         subject: "Registration Payment Confirmed - Clinidea",
         html: `<h3>Hello ${user.fullName},</h3>
-               <p>Your registration payment of ₹500 has been successfully verified.</p>
+               <p>Your registration payment of ₹10,000 has been successfully verified.</p>
                <p>Please find your official payment receipt attached.</p>
                <p>Best regards,<br/>The Clinidea Education Team</p>`,
         attachments: [{ filename: 'Receipt.pdf', path: path.join(__dirname, pdfUrl) }]
@@ -1454,7 +1511,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     if (!user.registrationFeePaid && !user.registrationScreenshot) {
-      return res.status(403).json({ error: 'Registration incomplete. Please register again and complete the 500 INR payment.' });
+      return res.status(403).json({ error: 'Registration incomplete. Please register again and complete the 10,000 INR payment.' });
     } else if (!user.registrationFeePaid && user.registrationScreenshot) {
       return res.status(403).json({ error: 'Your registration payment is currently under verification by admin. Please wait.' });
     }
@@ -1575,7 +1632,7 @@ app.post('/api/enrollment/create-order', authenticateUser, async (req, res) => {
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    const discount = user?.registrationFeePaid ? 500 : 0;
+    const discount = user?.registrationFeePaid ? 10000 : 0;
 
     const course = await prisma.course.findFirst({ where: { name: course_name } });
     const baseFee = course?.fees || 50000;
@@ -1592,10 +1649,11 @@ app.post('/api/enrollment/create-order', authenticateUser, async (req, res) => {
     } else {
       paymentTypeConfig = 'installment';
       const surcharge = 2000;
-      const installmentAmount = (baseFee + surcharge) / 2;
-      amountInINR = installmentAmount - discount;
-      feesPending = installmentAmount;
-      totalFees = amountInINR + feesPending;
+      const remainingBase = baseFee - discount;
+      const totalInstallmentAmount = remainingBase + surcharge;
+      amountInINR = totalInstallmentAmount / 2;
+      feesPending = totalInstallmentAmount / 2;
+      totalFees = totalInstallmentAmount;
     }
 
     const options = {
@@ -1838,7 +1896,7 @@ app.post('/api/auth/register-fee', async (req, res) => {
     }
 
     const options = {
-      amount: 500 * 100, // ₹500 in paise
+      amount: 10000 * 100, // ₹10000 in paise
       currency: "INR",
       receipt: "reg_receipt_" + Date.now(),
     };
@@ -1918,7 +1976,7 @@ app.post('/api/auth/verify-registration', async (req, res) => {
       data: {
         userId: user.id,
         courseName: 'Registration',
-        amount: 500,
+        amount: 10000,
         paymentMethod: 'razorpay',
         paymentStatus: 'completed',
         transactionId: razorpay_payment_id
@@ -1932,8 +1990,8 @@ app.post('/api/auth/verify-registration', async (req, res) => {
       courseName: 'Registration',
       mobileNo: user.phone,
       email: user.email,
-      amountPaid: 500,
-      totalFees: 500,
+      amountPaid: 10000,
+      totalFees: 10000,
       remainingFees: 0,
       paymentType: 'Online Registration',
       transactionId: payment.transactionId,
@@ -1950,7 +2008,7 @@ app.post('/api/auth/verify-registration', async (req, res) => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       const emailService = require('./utils/emailService');
       const absolutePdfPath = require('path').join(__dirname, pdfUrl);
-      await emailService.sendRegistrationReceipt(user, 500, razorpay_payment_id, absolutePdfPath);
+      await emailService.sendRegistrationReceipt(user, 10000, razorpay_payment_id, absolutePdfPath);
     }
 
     return res.json({ success: true, message: "Registration successful!", user });
@@ -1982,7 +2040,7 @@ app.post('/api/admin/verify-registration/:userId', authenticateAdmin, async (req
       data: {
         userId: user.id,
         courseName: 'Registration',
-        amount: 500,
+        amount: 10000,
         paymentMethod: 'Manual (Verified)',
         paymentStatus: 'success',
         transactionId: `REG-MANUAL-${Date.now()}`,
@@ -1997,8 +2055,8 @@ app.post('/api/admin/verify-registration/:userId', authenticateAdmin, async (req
       courseName: 'Registration',
       mobileNo: user.phone,
       email: user.email,
-      amountPaid: 500,
-      totalFees: 500,
+      amountPaid: 10000,
+      totalFees: 10000,
       remainingFees: 0,
       paymentType: 'Online Registration',
       transactionId: payment.transactionId,
@@ -2018,7 +2076,7 @@ app.post('/api/admin/verify-registration/:userId', authenticateAdmin, async (req
         to: user.email,
         subject: "Registration Verified & Payment Receipt",
         html: `<h3>Hello ${user.fullName},</h3>
-               <p>Your manual payment of ₹500 has been verified by the admin. Your registration is now confirmed.</p>
+               <p>Your manual payment of ₹10,000 has been verified by the admin. Your registration is now confirmed.</p>
                <p>Please find your official digitally signed payment slip attached to this email.</p>
                <br/><p>Best regards,<br/>The Clinidea Team</p>`,
         attachments: [
@@ -2167,13 +2225,13 @@ app.post('/api/enrollments/manual-payment', authenticateUser, uploadMiddleware, 
     const parsedAmount = parseFloat(amount);
     let feesPaid = parsedAmount;
     if (isRegistrationPaid && paymentType !== 'seat_booking') {
-       feesPaid += 500;
+       feesPaid += 10000;
     }
 
     let feesPending = totalFees - feesPaid;
     if (paymentType === 'seat_booking') {
-       totalFees = 500;
-       feesPending = 500 - feesPaid;
+       totalFees = 10000;
+       feesPending = 10000 - feesPaid;
     }
 
     const enrollment = await prisma.enrollment.create({
@@ -3529,6 +3587,100 @@ cron.schedule('0 * * * *', async () => {
     }
   } catch (err) {
     console.error("Cron job error (Event Reminders):", err);
+  }
+});
+
+// -------- STUDENT LMS PAYMENT ENDPOINTS --------
+app.get('/api/student/pending-enrollments', authenticateUser, async (req, res) => {
+  try {
+    const enrollments = await prisma.enrollment.findMany({
+      where: { 
+        userId: req.userId, 
+        feesPending: { gt: 0 },
+        enrollmentStatus: { in: ['enrolled', 'active', 'pending', 'assigned_by_admin'] }
+      },
+      select: {
+        id: true,
+        courseName: true,
+        amount: true,
+        totalFees: true,
+        feesPending: true,
+        paymentType: true
+      }
+    });
+    return res.json({ enrollments });
+  } catch (error) {
+    console.error("Fetch pending enrollments error:", error);
+    return res.status(500).json({ error: "Failed to fetch pending enrollments." });
+  }
+});
+
+app.post('/api/student/pay-pending-order', authenticateUser, async (req, res) => {
+  try {
+    const { enrollmentId } = req.body;
+    const enrollment = await prisma.enrollment.findUnique({ where: { id: enrollmentId, userId: req.userId } });
+    
+    if (!enrollment || enrollment.feesPending <= 0) {
+      return res.status(400).json({ error: "Invalid enrollment or no pending fees." });
+    }
+
+    const options = {
+      amount: enrollment.feesPending * 100, // paise
+      currency: "INR",
+      receipt: "pending_fees_" + Date.now(),
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+    return res.json({ success: true, orderId: order.id, amount: order.amount });
+  } catch (error) {
+    console.error("Create pending order error:", error);
+    return res.status(500).json({ error: "Failed to create order for pending fees." });
+  }
+});
+
+app.post('/api/student/verify-pending-payment', authenticateUser, async (req, res) => {
+  try {
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature, enrollmentId } = req.body;
+    
+    const crypto = require('crypto');
+    const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'dummy_secret');
+    hmac.update(razorpay_order_id + "|" + razorpay_payment_id);
+    const generated_signature = hmac.digest('hex');
+
+    if (generated_signature !== razorpay_signature) {
+      return res.status(400).json({ error: "Invalid payment signature." });
+    }
+
+    const enrollment = await prisma.enrollment.findUnique({ where: { id: enrollmentId, userId: req.userId } });
+    if (!enrollment) return res.status(404).json({ error: "Enrollment not found." });
+
+    const amountPaid = enrollment.feesPending;
+
+    // Update Enrollment
+    await prisma.enrollment.update({
+      where: { id: enrollmentId },
+      data: {
+        feesPending: 0,
+        paymentStatus: 'completed'
+      }
+    });
+
+    // Create Payment Record
+    await prisma.payment.create({
+      data: {
+        userId: req.userId,
+        courseName: enrollment.courseName,
+        amount: amountPaid,
+        paymentMethod: 'razorpay',
+        paymentStatus: 'completed',
+        transactionId: razorpay_payment_id
+      }
+    });
+
+    return res.json({ success: true, message: "Payment verified successfully!" });
+  } catch (error) {
+    console.error("Verify pending payment error:", error);
+    return res.status(500).json({ error: "Failed to verify pending payment." });
   }
 });
 

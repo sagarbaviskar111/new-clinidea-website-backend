@@ -183,7 +183,11 @@ async function uploadFileToDrive(filePath, fileName, mimeType, parentId) {
       webViewLink: file.data.webViewLink
     };
   } catch (err) {
-    console.error("Error uploading file to Drive:", err);
+    console.error("Error uploading file to Drive:", err.message || err);
+    if (parentId) {
+      console.log("Fallback: Attempting to upload to root directory instead due to permission error on parent.");
+      return await uploadFileToDrive(filePath, fileName, mimeType, null);
+    }
     throw err;
   }
 }
@@ -222,8 +226,8 @@ async function findDriveFolder(folderName, parentId) {
     }
     return null;
   } catch (err) {
-    console.error("Error finding Drive folder:", err);
-    throw err;
+    console.error("Error finding Drive folder:", err.message || err);
+    return null;
   }
 }
 
