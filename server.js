@@ -3471,6 +3471,57 @@ app.delete('/api/admin/placements/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
+// --- STUDENT REVIEW VIDEOS ---
+app.get('/api/review-videos', async (req, res) => {
+  try {
+    const v = await prisma.studentReviewVideo.findMany({ where: { isActive: true }, orderBy: { createdAt: 'desc' } });
+    return res.json(v);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch review videos' });
+  }
+});
+
+app.get('/api/admin/review-videos', authenticateAdmin, async (req, res) => {
+  try {
+    const v = await prisma.studentReviewVideo.findMany({ orderBy: { createdAt: 'desc' } });
+    return res.json(v);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch all review videos' });
+  }
+});
+
+app.post('/api/admin/review-videos', authenticateAdmin, async (req, res) => {
+  try {
+    const { studentName, youtubeUrl, isActive } = req.body;
+    const v = await prisma.studentReviewVideo.create({ data: { studentName, youtubeUrl, isActive } });
+    return res.json(v);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to create review video', details: err.message });
+  }
+});
+
+app.put('/api/admin/review-videos/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { studentName, youtubeUrl, isActive } = req.body;
+    const v = await prisma.studentReviewVideo.update({
+      where: { id: parseInt(req.params.id) },
+      data: { studentName, youtubeUrl, isActive }
+    });
+    return res.json(v);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update review video', details: err.message });
+  }
+});
+
+app.delete('/api/admin/review-videos/:id', authenticateAdmin, async (req, res) => {
+  try {
+    await prisma.studentReviewVideo.delete({ where: { id: parseInt(req.params.id) } });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to delete review video', details: err.message });
+  }
+});
+
 // --- COUPONS ---
 app.post('/api/enrollment/validate-coupon', async (req, res) => {
   try {

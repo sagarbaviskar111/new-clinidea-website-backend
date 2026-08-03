@@ -640,3 +640,15 @@ model ContentDeleteRequest {
   @@index([mentorId])
   @@map("content_delete_requests")
 }
+
+// -------- STUDENT REVIEW VIDEOS MODULE --------
+model StudentReviewVideo {
+  id          Int      @id @default(autoincrement())
+  studentName String   @map("student_name")
+  youtubeUrl  String   @map("youtube_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("student_review_videos")
+}
+
