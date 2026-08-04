@@ -494,13 +494,33 @@ router.get('/student/content', authenticateStudent, async (req, res) => {
     }
 
     // 2. Fetch all content for these batches
-    const contents = await prisma.lMSContent.findMany({
+    const rawContents = await prisma.lMSContent.findMany({
       where: { batchId: { in: batchIds } },
       orderBy: [
         { moduleName: 'asc' },
         { createdAt: 'asc' }
       ],
       include: { batch: { select: { batchName: true, course: { select: { name: true } } } } }
+    });
+
+    // 3. Filter contents by enrolled modules
+    const allowedModules = new Set(['general', 'live sessions', 'additional study material', '']);
+    enrollments.forEach(e => {
+      const c = (e.courseName || '').toLowerCase();
+      if (c.includes('clinical research')) { allowedModules.add('clinical research'); allowedModules.add('cr'); }
+      if (c.includes('pharmacovigilance')) { allowedModules.add('pharmacovigilance'); allowedModules.add('pv'); }
+      if (c.includes('data management')) { allowedModules.add('data management'); allowedModules.add('cdm'); allowedModules.add('clinical data management'); }
+      if (c.includes('regulatory')) { allowedModules.add('regulatory affairs'); allowedModules.add('ra'); }
+      if (c.includes('writing')) { allowedModules.add('medical writing'); allowedModules.add('mw'); }
+      if (c.includes('coding')) { allowedModules.add('medical coding'); allowedModules.add('mc'); }
+    });
+
+    const contents = rawContents.filter(c => {
+      const m = (c.moduleName || '').toLowerCase();
+      for (const allowed of allowedModules) {
+        if (m === allowed || m.includes(allowed)) return true;
+      }
+      return false;
     });
 
     const enrolledBatchesData = enrollments

@@ -2695,19 +2695,36 @@ app.get('/api/student/classes', authenticateUser, async (req, res) => {
   try {
     await processRecurringSessions();
 
-    const activeEnrollment = await prisma.enrollment.findFirst({
-      where: { userId: req.userId },
+    const enrollments = await prisma.enrollment.findMany({
+      where: { userId: req.userId, enrollmentStatus: { in: ['enrolled', 'active', 'completed', 'confirmed', 'registered'] } },
       orderBy: { createdAt: 'desc' },
       include: { batch: { include: { course: true } } }
     });
 
-    if (!activeEnrollment || !activeEnrollment.batchId) {
+    const batchIds = enrollments.map(e => e.batchId).filter(id => id !== null);
+
+    if (batchIds.length === 0) {
       return res.json({ classes: [], courseName: null });
     }
 
+    const allowedModules = new Set(['general', 'live sessions', 'additional study material', '']);
+    enrollments.forEach(e => {
+      const c = (e.courseName || '').toLowerCase();
+      if (c.includes('clinical research')) { allowedModules.add('clinical research'); allowedModules.add('cr'); }
+      if (c.includes('pharmacovigilance')) { allowedModules.add('pharmacovigilance'); allowedModules.add('pv'); }
+      if (c.includes('data management')) { allowedModules.add('data management'); allowedModules.add('cdm'); allowedModules.add('clinical data management'); }
+      if (c.includes('regulatory')) { allowedModules.add('regulatory affairs'); allowedModules.add('ra'); }
+      if (c.includes('writing')) { allowedModules.add('medical writing'); allowedModules.add('mw'); }
+      if (c.includes('coding')) { allowedModules.add('medical coding'); allowedModules.add('mc'); }
+    });
+
     const classes = await prisma.classSession.findMany({
-      where: { batchId: activeEnrollment.batchId },
+      where: { batchId: { in: batchIds } },
       orderBy: { sessionDate: 'asc' }
+    });
+
+    const batchMentors = await prisma.batchMentor.findMany({
+      where: { batchId: { in: batchIds } }
     });
 
     const today = new Date();
@@ -2716,10 +2733,26 @@ app.get('/api/student/classes', authenticateUser, async (req, res) => {
     const activeClasses = classes.filter(s => {
       const sDate = new Date(s.sessionDate);
       sDate.setHours(0, 0, 0, 0);
-      return sDate >= today;
+      if (sDate < today) return false;
+
+      let moduleName = 'general';
+      if (s.mentorId) {
+        const bm = batchMentors.find(m => m.batchId === s.batchId && m.mentorId === s.mentorId);
+        if (bm && bm.moduleName) moduleName = bm.moduleName.toLowerCase();
+      }
+
+      for (const allowed of allowedModules) {
+        if (moduleName === allowed || moduleName.includes(allowed)) return true;
+      }
+      return false;
     });
 
-    return res.json({ classes: activeClasses, courseName: activeEnrollment.batch?.course?.name || activeEnrollment.courseName, batchName: activeEnrollment.batch?.batchName });
+    const primaryEnrollment = enrollments[0];
+    return res.json({ 
+      classes: activeClasses, 
+      courseName: primaryEnrollment.batch?.course?.name || primaryEnrollment.courseName, 
+      batchName: primaryEnrollment.batch?.batchName 
+    });
   } catch (err) {
     console.error("Student classes error:", err);
     return res.status(500).json({ error: "Failed to parse active daily scheduler." });
