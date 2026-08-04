@@ -2505,6 +2505,25 @@ app.delete('/api/admin/batches/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
+// Admin ONLY: Update Batch Dates (Start/End)
+app.put('/api/admin/batches/:id/dates', authenticateAdmin, async (req, res) => {
+  const { startDate, endDate } = req.body;
+  try {
+    const dataToUpdate = {};
+    if (startDate !== undefined) dataToUpdate.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) dataToUpdate.endDate = endDate ? new Date(endDate) : null;
+
+    const batch = await prisma.batch.update({
+      where: { id: parseInt(req.params.id) },
+      data: dataToUpdate
+    });
+    return res.json(batch);
+  } catch (err) {
+    console.error("Batch Date Update Error:", err);
+    return res.status(500).json({ error: "Failed to update batch dates." });
+  }
+});
+
 // Admin ONLY: Assign Student to Batch Matrix
 app.post('/api/admin/assign-batch', authenticateAdmin, async (req, res) => {
   const { user_id, batch_id } = req.body;
