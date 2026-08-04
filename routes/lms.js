@@ -187,18 +187,33 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     let targetFolderId = null;
     let moduleName = 'General';
 
-    if (batchMentor) {
-      moduleName = batchMentor.moduleName;
-      const subFolderName = folderType || 'Additional Study Material';
-      targetFolderId = await findDriveFolder(subFolderName, batchMentor.folderId);
-      if (!targetFolderId) targetFolderId = batchMentor.folderId; // fallback
-    } else {
-      // Superadmin fallback
-      const batch = await prisma.batch.findUnique({ where: { id: batchId } });
-      targetFolderId = batch.driveFolderId;
+    const batch = await prisma.batch.findUnique({ where: { id: batchId } });
+    if (!batch) return res.status(404).json({ error: 'Batch not found' });
+    
+    if (!batch.driveFolderId) {
+      const BASE_DRIVE_FOLDER_ID = '1CU5-fkzNx34OcrXYv0JLN4otc3k43WXm';
+      const newFolderId = await createDriveFolder(batch.batchName, BASE_DRIVE_FOLDER_ID);
+      await prisma.batch.update({ where: { id: batchId }, data: { driveFolderId: newFolderId } });
+      batch.driveFolderId = newFolderId;
     }
 
-    if (!targetFolderId) return res.status(400).json({ error: 'Drive folder not initialized for this module/batch' });
+    if (batchMentor) {
+      moduleName = batchMentor.moduleName;
+      if (!batchMentor.folderId) {
+         const modFolderId = await createDriveFolder(moduleName, batch.driveFolderId);
+         await prisma.batchMentor.update({ where: { id: batchMentor.id }, data: { folderId: modFolderId } });
+         batchMentor.folderId = modFolderId;
+      }
+      
+      const subFolderName = folderType || 'Additional Study Material';
+      targetFolderId = await findDriveFolder(subFolderName, batchMentor.folderId);
+      if (!targetFolderId) {
+        targetFolderId = await createDriveFolder(subFolderName, batchMentor.folderId);
+      }
+    } else {
+      // Superadmin fallback
+      targetFolderId = batch.driveFolderId;
+    }
 
     // Handle Duplicate Naming
     let finalTitle = title;
