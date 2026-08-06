@@ -2,10 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const multer = require('multer');
-const { createDriveFolder, uploadToDrive, uploadFileToDrive, deleteDriveFile, findDriveFolder } = require('../utils/googleDrive');
+const { createDriveFolder, uploadToDrive, uploadFileToDrive, deleteDriveFile, findDriveFolder, getDriveFileStream } = require('../utils/googleDrive');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
+const archiver = require('archiver');
 
 const prisma = new PrismaClient();
 
@@ -190,32 +191,11 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     const batch = await prisma.batch.findUnique({ where: { id: batchId } });
     if (!batch) return res.status(404).json({ error: 'Batch not found' });
     
-    if (!batch.driveFolderId) {
-      const BASE_DRIVE_FOLDER_ID = '1CU5-fkzNx34OcrXYv0JLN4otc3k43WXm';
-      const newFolderId = await createDriveFolder(batch.batchName, BASE_DRIVE_FOLDER_ID);
-      await prisma.batch.update({ where: { id: batchId }, data: { driveFolderId: newFolderId } });
-      batch.driveFolderId = newFolderId;
-    }
-
     if (batchMentor) {
       moduleName = batchMentor.moduleName;
-      if (!batchMentor.folderId) {
-         const modFolderId = await createDriveFolder(moduleName, batch.driveFolderId);
-         await prisma.batchMentor.update({ where: { id: batchMentor.id }, data: { folderId: modFolderId } });
-         batchMentor.folderId = modFolderId;
-      }
-      
-      const subFolderName = folderType || 'Additional Study Material';
-      targetFolderId = await findDriveFolder(subFolderName, batchMentor.folderId);
-      if (!targetFolderId) {
-        targetFolderId = await createDriveFolder(subFolderName, batchMentor.folderId);
-      }
-    } else {
-      // Superadmin fallback
-      targetFolderId = batch.driveFolderId;
     }
 
-    // Handle Duplicate Naming
+    // Handle Duplicate Naming for UI display
     let finalTitle = title;
     let counter = 1;
     while (await prisma.lMSContent.findFirst({ where: { batchId, title: finalTitle } })) {
@@ -223,17 +203,57 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
       counter++;
     }
 
-    // Determine extension for filename in drive
     const ext = path.extname(file.originalname);
-    const driveFileName = ext ? `${finalTitle}${ext}` : file.originalname;
+    let driveResult = null;
+    let localFileUrl = null;
 
-    // Upload to Drive
-    let driveResult;
-    try {
-      driveResult = await uploadFileToDrive(file.path, driveFileName, file.mimetype, targetFolderId);
-    } finally {
-      if (file && fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
+    if (batch.storageType === 'local') {
+      try {
+        const destDir = path.join(__dirname, '..', 'uploads', 'lms');
+        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+        
+        const uniqueFileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+        const destPath = path.join(destDir, uniqueFileName);
+        
+        fs.renameSync(file.path, destPath);
+        localFileUrl = `/uploads/lms/${uniqueFileName}`;
+      } catch (err) {
+        if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        throw err;
+      }
+    } else {
+      // Legacy Google Drive Logic
+      if (!batch.driveFolderId) {
+        const BASE_DRIVE_FOLDER_ID = process.env.BASE_DRIVE_FOLDER_ID || '1CU5-fkzNx34OcrXYv0JLN4otc3k43WXm';
+        const newFolderId = await createDriveFolder(batch.batchName, BASE_DRIVE_FOLDER_ID);
+        await prisma.batch.update({ where: { id: batchId }, data: { driveFolderId: newFolderId } });
+        batch.driveFolderId = newFolderId;
+      }
+
+      if (batchMentor) {
+        if (!batchMentor.folderId) {
+           const modFolderId = await createDriveFolder(moduleName, batch.driveFolderId);
+           await prisma.batchMentor.update({ where: { id: batchMentor.id }, data: { folderId: modFolderId } });
+           batchMentor.folderId = modFolderId;
+        }
+        
+        const subFolderName = folderType || 'Additional Study Material';
+        targetFolderId = await findDriveFolder(subFolderName, batchMentor.folderId);
+        if (!targetFolderId) {
+          targetFolderId = await createDriveFolder(subFolderName, batchMentor.folderId);
+        }
+      } else {
+        targetFolderId = batch.driveFolderId;
+      }
+
+      const driveFileName = ext ? `${finalTitle}${ext}` : file.originalname;
+
+      try {
+        driveResult = await uploadFileToDrive(file.path, driveFileName, file.mimetype, targetFolderId);
+      } finally {
+        if (file && fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
       }
     }
 
@@ -252,8 +272,9 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
         contentType,
         category: folderType || 'Additional Study Material',
         moduleName,
-        driveFileId: driveResult.fileId,
-        driveWebViewLink: driveResult.webViewLink
+        driveFileId: driveResult ? driveResult.fileId : null,
+        driveWebViewLink: driveResult ? driveResult.webViewLink : null,
+        localFileUrl: localFileUrl
       }
     });
 
@@ -702,6 +723,251 @@ router.get('/mentor/batches/:batchId/live-sessions', authenticateMentor, async (
   } catch (err) {
     console.error("Mentor fetch live sessions error:", err);
     res.status(500).json({ error: 'Failed to fetch live sessions' });
+  }
+});
+
+// Admin Download All Batch Content as ZIP
+router.get('/admin/batches/:batchId/download-all', async (req, res) => {
+  try {
+    // Note: Authentication should be ideally enforced, 
+    // assuming it's protected by Nginx or a global admin middleware for /api/admin
+    const batchId = parseInt(req.params.batchId);
+    
+    const batch = await prisma.batch.findUnique({
+      where: { id: batchId }
+    });
+    
+    if (!batch) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    const contents = await prisma.lMSContent.findMany({
+      where: { batchId }
+    });
+
+    if (contents.length === 0) {
+      return res.status(404).json({ error: 'No content found for this batch' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${batch.batchName.replace(/[^a-zA-Z0-9_-]/g, '_')}_content.zip"`);
+
+    const archive = archiver('zip', {
+      zlib: { level: 5 } // Standard compression
+    });
+
+    archive.on('error', function(err) {
+      console.error('Archiver error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to generate ZIP file' });
+      }
+    });
+
+    archive.pipe(res);
+
+    for (const content of contents) {
+      let ext = content.title.includes('.') ? '' : '.ext'; // Rough fallback, though original filenames are usually better
+      if (content.contentType === 'video') ext = '.mp4';
+      else if (content.contentType === 'pdf') ext = '.pdf';
+      else if (content.contentType === 'ppt') ext = '.pptx';
+      else if (content.contentType === 'doc') ext = '.docx';
+      
+      const safeTitle = content.title.replace(/[^a-zA-Z0-9_\-\.\s]/g, '_');
+      const filename = `${content.moduleName}/${content.category}/${safeTitle}${ext}`;
+
+      if (content.localFileUrl) {
+        const localPath = path.join(__dirname, '..', content.localFileUrl);
+        if (fs.existsSync(localPath)) {
+          archive.file(localPath, { name: filename });
+        }
+      } else if (content.driveFileId) {
+        try {
+          const stream = await getDriveFileStream(content.driveFileId);
+          archive.append(stream, { name: filename });
+        } catch (streamErr) {
+          console.error(`Failed to fetch Drive file ${content.driveFileId}:`, streamErr.message);
+        }
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('Download All Error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to process download request' });
+    }
+  }
+});
+
+// --- STUDENT ABSENCE REASON ---
+router.get('/student/pending-absences', authenticateStudent, async (req, res) => {
+  try {
+    const absences = await prisma.attendance.findMany({
+      where: { 
+        userId: req.userId, 
+        status: 'absent', 
+        studentNotified: false 
+      },
+      include: {
+        session: { include: { batch: true } }
+      }
+    });
+    return res.json({ success: true, absences });
+  } catch (error) {
+    console.error('Error fetching pending absences:', error);
+    return res.status(500).json({ error: 'Failed to fetch pending absences' });
+  }
+});
+
+router.post('/student/submit-absence-reason', authenticateStudent, async (req, res) => {
+  const { attendanceId, reason } = req.body;
+  try {
+    await prisma.attendance.update({
+      where: { id: attendanceId },
+      data: {
+        absenceReason: reason,
+        studentNotified: true // Mark as notified/resolved so popup stops showing
+      }
+    });
+    return res.json({ success: true, message: 'Reason submitted successfully' });
+  } catch (error) {
+    console.error('Error submitting absence reason:', error);
+    return res.status(500).json({ error: 'Failed to submit reason' });
+  }
+});
+
+// --- STUDENT ASSIGNMENTS ---
+router.get('/student/assignments', authenticateStudent, async (req, res) => {
+  try {
+    const enrollments = await prisma.enrollment.findMany({
+      where: { userId: req.userId, enrollmentStatus: 'approved' }
+    });
+    const batchIds = enrollments.map(e => e.batchId);
+    
+    const assignments = await prisma.assignment.findMany({
+      where: { batchId: { in: batchIds } },
+      include: {
+        submissions: {
+          where: { userId: req.userId }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json({ success: true, assignments });
+  } catch (error) {
+    console.error('Error fetching student assignments:', error);
+    return res.status(500).json({ error: 'Failed to fetch assignments' });
+  }
+});
+
+router.post('/student/assignments/submit', authenticateStudent, upload.single('file'), async (req, res) => {
+  const { assignmentId } = req.body;
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    // Save to local file system exactly like LMS uploads
+    const targetDir = path.join(__dirname, '..', 'uploads', 'assignments');
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+    
+    const finalFilename = `assignment-${req.userId}-${Date.now()}${path.extname(req.file.originalname)}`;
+    const finalPath = path.join(targetDir, finalFilename);
+    
+    fs.renameSync(req.file.path, finalPath);
+    const fileUrl = `/uploads/assignments/${finalFilename}`;
+
+    const submission = await prisma.assignmentSubmission.upsert({
+      where: { assignmentId_userId: { assignmentId: parseInt(assignmentId), userId: req.userId } },
+      update: { fileUrl, status: 'submitted', submittedAt: new Date() },
+      create: { assignmentId: parseInt(assignmentId), userId: req.userId, fileUrl, status: 'submitted' }
+    });
+
+    return res.json({ success: true, submission });
+  } catch (error) {
+    console.error('Assignment submission error:', error);
+    return res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// --- STUDENT EXAMS ---
+router.get('/student/exams', authenticateStudent, async (req, res) => {
+  try {
+    const enrollments = await prisma.enrollment.findMany({
+      where: { userId: req.userId, enrollmentStatus: 'approved' }
+    });
+    const batchIds = enrollments.map(e => e.batchId);
+    
+    const exams = await prisma.batchExam.findMany({
+      where: { batchId: { in: batchIds } },
+      include: {
+        questions: true,
+        submissions: {
+          where: { userId: req.userId },
+          include: { answers: true }
+        }
+      },
+      orderBy: { startTime: 'desc' }
+    });
+    return res.json({ success: true, exams });
+  } catch (error) {
+    console.error('Error fetching student exams:', error);
+    return res.status(500).json({ error: 'Failed to fetch exams' });
+  }
+});
+
+router.post('/student/exams/submit', authenticateStudent, async (req, res) => {
+  const { examId, answers } = req.body; // answers is { [questionId]: value }
+  try {
+    const exam = await prisma.batchExam.findUnique({
+      where: { id: parseInt(examId) },
+      include: { questions: true }
+    });
+    if (!exam) return res.status(404).json({ error: 'Exam not found' });
+
+    let totalScore = 0;
+    const answerRecords = [];
+
+    // Evaluate answers
+    for (const q of exam.questions) {
+      const studentAns = answers[q.id];
+      if (q.type === 'mcq') {
+        const isCorrect = parseInt(studentAns) === q.correctOption;
+        const marksObtained = isCorrect ? q.marks : 0;
+        totalScore += marksObtained;
+        answerRecords.push({
+          questionId: q.id,
+          selectedOption: studentAns !== undefined ? parseInt(studentAns) : null,
+          marksObtained
+        });
+      } else {
+        answerRecords.push({
+          questionId: q.id,
+          writtenAnswer: studentAns || '',
+          marksObtained: 0 // To be graded manually by mentor
+        });
+      }
+    }
+
+    const submission = await prisma.examSubmission.upsert({
+      where: { examId_userId: { examId: parseInt(examId), userId: req.userId } },
+      update: {
+        totalScore,
+        status: exam.questions.some(q => q.type === 'written') ? 'submitted' : 'graded',
+        submittedAt: new Date(),
+        answers: { deleteMany: {}, create: answerRecords }
+      },
+      create: {
+        examId: parseInt(examId),
+        userId: req.userId,
+        totalScore,
+        status: exam.questions.some(q => q.type === 'written') ? 'submitted' : 'graded',
+        answers: { create: answerRecords }
+      }
+    });
+
+    return res.json({ success: true, submission });
+  } catch (error) {
+    console.error('Exam submission error:', error);
+    return res.status(500).json({ error: 'Submission failed' });
   }
 });
 

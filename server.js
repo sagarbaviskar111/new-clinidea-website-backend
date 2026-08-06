@@ -337,12 +337,14 @@ const hrCampaignRoutes = require('./routes/hrCampaigns');
 // const hrDashboardRoutes = require('./routes/hrDashboard');
 const lmsRoutes = require('./routes/lms');
 const quizRoutes = require('./routes/quiz');
+const mentorRoutes = require('./routes/mentor');
 
 // app.use('/api/admin', hrDatabaseRoutes);
 app.use('/api/admin', authenticateAdmin, hrCampaignRoutes);
 // app.use('/api/admin', hrDashboardRoutes);
 app.use('/api', lmsRoutes);
 app.use('/api', quizRoutes);
+app.use('/api', mentorRoutes);
 
 // --------
 // PUBLIC

@@ -195,39 +195,58 @@ async function uploadFileToDrive(filePath, fileName, mimeType, parentId) {
 /**
  * Deletes a file from Google Drive
  * @param {string} fileId The ID of the file to delete
+ * @returns {Promise<boolean>} True if successful
  */
 async function deleteDriveFile(fileId) {
-  if (!driveClient) throw new Error("Google Drive API not initialized");
+  if (!driveClient) return false;
   try {
     await driveClient.files.delete({ fileId: fileId });
     return true;
   } catch (err) {
     console.error("Error deleting file from Drive:", err);
-    throw err;
+    return false;
   }
 }
 
 /**
- * Finds a folder by name inside a parent folder
- * @param {string} folderName Name of the folder
+ * Finds a folder by name within a parent folder
+ * @param {string} folderName Name of the folder to find
  * @param {string} parentId ID of the parent folder
- * @returns {Promise<string|null>} The ID of the folder or null
+ * @returns {Promise<string|null>} The ID of the folder if found, null otherwise
  */
 async function findDriveFolder(folderName, parentId) {
-  if (!driveClient) throw new Error("Google Drive API not initialized");
+  if (!driveClient) return null;
   try {
+    const query = `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false` + (parentId ? ` and '${parentId}' in parents` : "");
     const res = await driveClient.files.list({
-      q: `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      q: query,
       fields: 'files(id, name)',
-      spaces: 'drive'
+      spaces: 'drive',
     });
+    
     if (res.data.files.length > 0) {
       return res.data.files[0].id;
     }
     return null;
   } catch (err) {
-    console.error("Error finding Drive folder:", err.message || err);
+    console.error("Error finding Drive folder:", err);
     return null;
+  }
+}
+
+/**
+ * Gets a read stream for a Drive file
+ * @param {string} fileId The ID of the file
+ * @returns {Promise<stream.Readable>} A readable stream
+ */
+async function getDriveFileStream(fileId) {
+  if (!driveClient) throw new Error("Google Drive API not initialized");
+  try {
+    const res = await driveClient.files.get({ fileId, alt: 'media' }, { responseType: 'stream' });
+    return res.data;
+  } catch (err) {
+    console.error("Error getting Drive file stream:", err);
+    throw err;
   }
 }
 
@@ -236,5 +255,6 @@ module.exports = {
   uploadToDrive,
   uploadFileToDrive,
   deleteDriveFile,
-  findDriveFolder
+  findDriveFolder,
+  getDriveFileStream
 };

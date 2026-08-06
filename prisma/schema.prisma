@@ -36,6 +36,8 @@ model Admin {
   batchMentors BatchMentor[]
   deleteRequests ContentDeleteRequest[]
   classSessions ClassSession[]
+  assignments Assignment[]
+  exams BatchExam[]
 
   @@map("admins")
 }
@@ -64,6 +66,8 @@ model User {
   referredBy    Referral[] @relation("ReferredBy")
   payments      Payment[]
   notifications Notification[]
+  assignmentSubmissions AssignmentSubmission[]
+  examSubmissions ExamSubmission[]
 
   @@map("users")
 }
@@ -166,6 +170,7 @@ model Batch {
   endDate      DateTime? @map("end_date")
   classTime    String?  @map("class_time")
   driveFolderId String? @map("drive_folder_id")
+  storageType  String   @default("local") @map("storage_type")
   createdAt    DateTime @default(now()) @map("created_at")
 
   course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
@@ -174,6 +179,8 @@ model Batch {
   sessions     ClassSession[]
   certificates Certificate[]
   lmsContents  LMSContent[]
+  assignments  Assignment[]
+  exams        BatchExam[]
 
   @@index([courseId])
   @@map("batches")
@@ -189,6 +196,8 @@ model ClassSession {
   status       String   @default("upcoming") // upcoming, live, completed
   recurrence   String   @default("none")
   mentorId     Int?     @map("mentor_id")
+  isCancelled  Boolean  @default(false) @map("is_cancelled")
+  cancellationReason String? @map("cancellation_reason")
   createdAt    DateTime @default(now()) @map("created_at")
 
   batch        Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
@@ -204,6 +213,8 @@ model Attendance {
   userId         Int          @map("user_id")
   classSessionId Int          @map("class_session_id")
   status         String       @default("absent") 
+  absenceReason  String?      @map("absence_reason")
+  studentNotified Boolean     @default(false) @map("student_notified")
   markedAt       DateTime     @default(now()) @map("marked_at")
 
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -596,8 +607,9 @@ model LMSContent {
   description     String?
   contentType     String   @map("content_type") // video, pdf, ppt, doc
   category        String   @default("Additional Study Material")
-  driveFileId     String   @map("drive_file_id")
+  driveFileId     String?  @map("drive_file_id")
   driveWebViewLink String? @map("drive_web_view_link")
+  localFileUrl    String?  @map("local_file_url")
   moduleName      String   @default("General") @map("module_name")
   createdAt       DateTime @default(now()) @map("created_at")
 
@@ -650,5 +662,112 @@ model StudentReviewVideo {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("student_review_videos")
+}
+
+// -------- MENTOR DASHBOARD MODULES --------
+
+model Assignment {
+  id          Int      @id @default(autoincrement())
+  batchId     Int      @map("batch_id")
+  mentorId    Int      @map("mentor_id")
+  title       String
+  description String?
+  totalMarks  Int      @default(100) @map("total_marks")
+  dueDate     DateTime @map("due_date")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  mentor      Admin    @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  submissions AssignmentSubmission[]
+
+  @@index([batchId])
+  @@index([mentorId])
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id              Int      @id @default(autoincrement())
+  assignmentId    Int      @map("assignment_id")
+  userId          Int      @map("user_id")
+  fileUrl         String?  @map("file_url")
+  status          String   @default("submitted") // submitted, graded
+  marksObtained   Int?     @map("marks_obtained")
+  mentorFeedback  String?  @map("mentor_feedback")
+  submittedAt     DateTime @default(now()) @map("submitted_at")
+  gradedAt        DateTime? @map("graded_at")
+
+  assignment      Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, userId])
+  @@map("assignment_submissions")
+}
+
+model BatchExam {
+  id          Int      @id @default(autoincrement())
+  batchId     Int      @map("batch_id")
+  mentorId    Int      @map("mentor_id")
+  title       String
+  totalMarks  Int      @default(100) @map("total_marks")
+  startTime   DateTime @map("start_time")
+  endTime     DateTime @map("end_time")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  mentor      Admin    @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  questions   ExamQuestion[]
+  submissions ExamSubmission[]
+
+  @@index([batchId])
+  @@index([mentorId])
+  @@map("batch_exams")
+}
+
+model ExamQuestion {
+  id            Int      @id @default(autoincrement())
+  examId        Int      @map("exam_id")
+  type          String   @default("MCQ") // MCQ, WRITTEN
+  questionText  String   @map("question_text")
+  optionsJson   String?  @map("options_json")  // JSON array for MCQs
+  correctOption String?  @map("correct_option")
+  marks         Int      @default(1)
+
+  exam          BatchExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  answers       ExamAnswer[]
+
+  @@index([examId])
+  @@map("exam_questions")
+}
+
+model ExamSubmission {
+  id          Int      @id @default(autoincrement())
+  examId      Int      @map("exam_id")
+  userId      Int      @map("user_id")
+  status      String   @default("submitted") // in_progress, submitted, graded
+  totalScore  Int?     @map("total_score")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  gradedAt    DateTime? @map("graded_at")
+
+  exam        BatchExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers     ExamAnswer[]
+
+  @@unique([examId, userId])
+  @@map("exam_submissions")
+}
+
+model ExamAnswer {
+  id              Int      @id @default(autoincrement())
+  submissionId    Int      @map("submission_id")
+  questionId      Int      @map("question_id")
+  answerText      String   @map("answer_text") // the selected option or written text
+  marksObtained   Int?     @map("marks_obtained")
+  mentorRemarks   String?  @map("mentor_remarks")
+
+  submission      ExamSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question        ExamQuestion   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, questionId])
+  @@map("exam_answers")
 }
 
