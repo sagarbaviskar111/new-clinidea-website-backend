@@ -338,10 +338,12 @@ const hrCampaignRoutes = require('./routes/hrCampaigns');
 const lmsRoutes = require('./routes/lms');
 const quizRoutes = require('./routes/quiz');
 const mentorRoutes = require('./routes/mentor');
+const adminUserRoutes = require('./routes/adminUsers');
 
 // app.use('/api/admin', hrDatabaseRoutes);
 app.use('/api/admin', authenticateAdmin, hrCampaignRoutes);
 // app.use('/api/admin', hrDashboardRoutes);
+app.use('/api/admin/users', authenticateAdmin, adminUserRoutes);
 app.use('/api', lmsRoutes);
 app.use('/api', quizRoutes);
 app.use('/api', mentorRoutes);
