@@ -84,4 +84,42 @@ router.delete('/:id', ensureSuperAdmin, async (req, res) => {
   }
 });
 
+// PUT to update an admin user
+router.put('/:id', ensureSuperAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { email, password, role } = req.body;
+  
+  try {
+    const updateData = { role };
+    if (email) updateData.email = email.toLowerCase();
+    
+    // Check if new email is already taken by another admin
+    if (email) {
+      const existing = await prisma.admin.findUnique({ where: { email: email.toLowerCase() } });
+      if (existing && existing.id !== parseInt(id)) {
+        return res.status(400).json({ error: 'Email already in use by another account' });
+      }
+    }
+
+    if (password && password.trim() !== '') {
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    const updatedAdmin = await prisma.admin.update({
+      where: { id: parseInt(id) },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        role: true
+      }
+    });
+
+    res.json(updatedAdmin);
+  } catch (error) {
+    console.error('Error updating admin:', error);
+    res.status(500).json({ error: 'Failed to update admin user' });
+  }
+});
+
 module.exports = router;
