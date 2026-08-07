@@ -2,8 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { ensureSuperAdmin } = require('./adminUsers'); // Assuming this exports ensureSuperAdmin
-
+const ensureSuperAdmin = (req, res, next) => {
+  if (req.adminRole !== 'superadmin') {
+    return res.status(403).json({ error: 'Forbidden: Super Admin only' });
+  }
+  next();
+};
 // GET /api/admin/student-management/batches
 router.get('/batches', ensureSuperAdmin, async (req, res) => {
   try {
