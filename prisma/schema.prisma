@@ -55,6 +55,8 @@ model User {
   registrationReceiptUrl String? @map("registration_receipt_url")
   isRegistrationConfirmed Boolean @default(false) @map("is_registration_confirmed")
   registeredCourse String? @map("registered_course")
+  lmsBlocked       Boolean @default(false) @map("lms_blocked")
+  adminUnblocked   Boolean @default(false) @map("admin_unblocked")
   createdAt DateTime @default(now()) @map("created_at")
 
   enrollments Enrollment[]
@@ -82,6 +84,7 @@ model Enrollment {
   paymentStatus        String    @default("pending") @map("payment_status")
   transactionId        String?   @map("transaction_id")
   paymentScreenshotUrl String?   @map("payment_screenshot_url")
+  feePlanType          String?   @map("fee_plan_type")
   
   totalFees            Float     @default(0) @map("total_fees")
   feesPaid             Float     @default(0) @map("fees_paid")
@@ -459,6 +462,10 @@ model Payment {
   fileUrl         String?  @map("file_url")
   receiptNumber   Int?     @unique @map("receipt_number")
   paymentDate     DateTime @default(now()) @map("payment_date")
+  dueDate         DateTime? @map("due_date")
+  installmentNo   Int?      @map("installment_no")
+  paymentType     String    @default("fee") @map("payment_type")
+  isOverdue       Boolean   @default(false) @map("is_overdue")
 
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

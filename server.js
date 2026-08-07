@@ -262,7 +262,7 @@ const authenticateAdmin = async (req, res, next) => {
   }
 };
 
-const authenticateUser = (req, res, next) => {
+const authenticateUser = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
@@ -270,6 +270,39 @@ const authenticateUser = (req, res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    
+    // Check for LMS blocking
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: {
+        payments: {
+          where: { paymentType: 'fee_installment', paymentStatus: 'pending' }
+        }
+      }
+    });
+
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    if (user.lmsBlocked) return res.status(403).json({ error: 'Blocked: LMS Access Revoked. Please contact admin.', isFeeBlock: true });
+
+    // Allow payment routes to go through even if blocked
+    const allowedBlockedRoutes = ['/api/student/payments', '/api/student/profile', '/api/razorpay'];
+    const reqUrl = req.originalUrl || req.url;
+    const isAllowedRoute = allowedBlockedRoutes.some(route => reqUrl.startsWith(route));
+
+    if (!user.adminUnblocked && !isAllowedRoute) {
+      const now = new Date();
+      const isOverdueAndBlocked = user.payments.some(p => {
+        if (!p.dueDate) return false;
+        const dueTime = new Date(p.dueDate).getTime();
+        const diffDays = (now.getTime() - dueTime) / (1000 * 3600 * 24);
+        return diffDays > 8; // 8 days overdue
+      });
+      
+      if (isOverdueAndBlocked) {
+         return res.status(403).json({ error: 'Blocked: Fees Overdue by more than 8 days.', isFeeBlock: true });
+      }
+    }
+
     req.userId = decoded.userId;
     req.userRole = decoded.role;
     next();
@@ -339,12 +372,16 @@ const lmsRoutes = require('./routes/lms');
 const quizRoutes = require('./routes/quiz');
 const mentorRoutes = require('./routes/mentor');
 const adminUserRoutes = require('./routes/adminUsers');
+const studentManagementRoutes = require('./routes/studentManagement');
+const studentPaymentsRoutes = require('./routes/studentPayments');
 
 // app.use('/api/admin', hrDatabaseRoutes);
 app.use('/api/admin', authenticateAdmin, hrCampaignRoutes);
 // app.use('/api/admin', hrDashboardRoutes);
 app.use('/api/admin/users', authenticateAdmin, adminUserRoutes);
+app.use('/api/admin/student-management', authenticateAdmin, studentManagementRoutes);
 app.use('/api', lmsRoutes);
+app.use('/api/student', authenticateUser, studentPaymentsRoutes);
 app.use('/api', quizRoutes);
 app.use('/api', mentorRoutes);
 
