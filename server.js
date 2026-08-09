@@ -43,7 +43,8 @@ const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+
 // Compression and Security Hardening
 app.use(compression());
 app.use(helmet({
-  crossOriginResourcePolicy: false // Allow serving images/files cross-origin if needed
+  crossOriginResourcePolicy: false, // Allow serving images/files cross-origin if needed
+  contentSecurityPolicy: false // Allow PDF viewing in browser (disables object-src 'none')
 }));
 
 // Rate limiting for general API
