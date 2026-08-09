@@ -775,6 +775,56 @@ app.get('/api/admin/students', authenticateAdmin, async (req, res) => {
   }
 });
 
+async function ensureRegistrationReceipt(userId) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: parseInt(userId) } });
+    if (!user) return;
+    const existingPayment = await prisma.payment.findFirst({
+      where: { userId: user.id, paymentType: 'registration' }
+    });
+    if (existingPayment) return;
+
+    const receiptNo = 'REG-' + Date.now();
+    const pdfUrl = await generateReceiptPDF({
+      receiptNo,
+      studentName: user.fullName,
+      paymentId: 'REG-BYPASS',
+      mobileNo: user.phone,
+      email: user.email,
+      course: 'Registration Fees',
+      method: 'Manual/Bypass',
+      paymentMode: 'System',
+      totalFees: 10000,
+      feesPaid: 10000,
+      feesPending: 0
+    });
+
+    await prisma.payment.create({
+      data: {
+        userId: user.id,
+        courseName: 'Registration Fees',
+        amount: 10000,
+        paymentMethod: 'System',
+        paymentStatus: 'paid',
+        transactionId: 'REG-BYPASS-' + Date.now(),
+        fileUrl: pdfUrl,
+        paymentType: 'registration',
+        isOverdue: false
+      }
+    });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        registrationFeePaid: true,
+        registrationReceiptUrl: pdfUrl
+      }
+    });
+  } catch (err) {
+    console.error('Error generating registration receipt:', err);
+  }
+}
+
 app.put('/api/admin/users/:id', authenticateAdmin, async (req, res) => {
   const { id } = req.params;
   const { status, registrationFeePaid } = req.body;
@@ -788,6 +838,11 @@ app.put('/api/admin/users/:id', authenticateAdmin, async (req, res) => {
       where: { id: parseInt(id) },
       data: updateData
     });
+    
+    if (registrationFeePaid) {
+      await ensureRegistrationReceipt(updated.id);
+    }
+    
     const { password, ...cleanUpdated } = updated;
     return res.json(cleanUpdated);
   } catch (error) {
@@ -1041,6 +1096,10 @@ app.post('/api/admin/enrollments/create-for-registered', authenticateAdmin, asyn
       },
       include: { user: true }
     });
+
+    // Also ensure registration receipt is created if they are enrolled in a batch by admin
+    await ensureRegistrationReceipt(parseInt(userId));
+
     return res.json(enrollment);
   } catch (err) {
     console.error(err);
