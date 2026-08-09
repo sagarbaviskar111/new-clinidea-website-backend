@@ -3,6 +3,7 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const multer = require('multer');
 const { createDriveFolder, uploadToDrive, uploadFileToDrive, deleteDriveFile, findDriveFolder, getDriveFileStream } = require('../utils/googleDrive');
+const { uploadToR2, deleteFromR2, getPresignedUrl, getFileStreamFromR2 } = require('../utils/cloudflareR2');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
@@ -221,6 +222,23 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
         if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
         throw err;
       }
+    } else if (batch.storageType === 'r2') {
+      try {
+        const uniqueFileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+        // Store inside a folder structure: courseName/batchName/moduleName/
+        const safeBatchName = batch.batchName.replace(/[^a-zA-Z0-9-]/g, '_');
+        const objectKey = `lms/${safeBatchName}/${moduleName.replace(/[^a-zA-Z0-9-]/g, '_')}/${uniqueFileName}`;
+        
+        await uploadToR2(file.path, objectKey, file.mimetype);
+        const presignedUrl = await getPresignedUrl(objectKey);
+        
+        driveResult = {
+          fileId: objectKey,
+          webViewLink: presignedUrl // Note: this URL expires in 12 hours. We'll implement a proxy route for permanent access.
+        };
+      } finally {
+        if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      }
     } else {
       // Legacy Google Drive Logic
       if (!batch.driveFolderId) {
@@ -382,19 +400,24 @@ router.delete('/mentor/content/:contentId', authenticateMentor, async (req, res)
   try {
     const contentId = parseInt(req.params.contentId);
     const content = await prisma.lMSContent.findUnique({
-      where: { id: contentId }
+      where: { id: contentId },
+      include: { batch: true }
     });
 
     if (!content) {
       return res.status(404).json({ error: 'Content not found' });
     }
 
-    // 1. Delete the file from Google Drive if it exists
+    // 1. Delete the file from Cloudflare R2 or Google Drive if it exists
     if (content.driveFileId) {
       try {
-        await deleteDriveFile(content.driveFileId);
-      } catch (driveErr) {
-        console.error("Failed to delete file from Google Drive:", driveErr);
+        if (content.batch.storageType === 'r2') {
+          await deleteFromR2(content.driveFileId);
+        } else {
+          await deleteDriveFile(content.driveFileId);
+        }
+      } catch (remoteErr) {
+        console.error("Failed to delete file from remote storage:", remoteErr);
       }
     }
 
@@ -457,16 +480,24 @@ router.put('/admin/lms/delete-requests/:id/approve', async (req, res) => {
   try {
     const request = await prisma.contentDeleteRequest.findUnique({
       where: { id: parseInt(req.params.id) },
-      include: { content: true }
+      include: { content: { include: { batch: true } } }
     });
     
     if (!request || request.status !== 'pending') {
       return res.status(400).json({ error: 'Invalid or already processed request' });
     }
 
-    // Delete from Drive
+    // Delete from Drive or R2
     if (request.content.driveFileId) {
-      await deleteDriveFile(request.content.driveFileId);
+      try {
+        if (request.content.batch.storageType === 'r2') {
+          await deleteFromR2(request.content.driveFileId);
+        } else {
+          await deleteDriveFile(request.content.driveFileId);
+        }
+      } catch (remoteErr) {
+        console.error("Failed to delete file from remote storage:", remoteErr);
+      }
     }
 
     // Delete from DB
@@ -782,10 +813,15 @@ router.get('/admin/batches/:batchId/download-all', async (req, res) => {
         }
       } else if (content.driveFileId) {
         try {
-          const stream = await getDriveFileStream(content.driveFileId);
-          archive.append(stream, { name: filename });
+          if (batch.storageType === 'r2') {
+            const stream = await getFileStreamFromR2(content.driveFileId);
+            archive.append(stream, { name: filename });
+          } else {
+            const stream = await getDriveFileStream(content.driveFileId);
+            archive.append(stream, { name: filename });
+          }
         } catch (streamErr) {
-          console.error(`Failed to fetch Drive file ${content.driveFileId}:`, streamErr.message);
+          console.error(`Failed to fetch remote file ${content.driveFileId}:`, streamErr.message);
         }
       }
     }

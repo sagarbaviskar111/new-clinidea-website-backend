@@ -378,7 +378,7 @@ const studentPaymentsRoutes = require('./routes/studentPayments');
 // app.use('/api/admin', hrDatabaseRoutes);
 app.use('/api/admin', authenticateAdmin, hrCampaignRoutes);
 // app.use('/api/admin', hrDashboardRoutes);
-app.use('/api/admin/users', authenticateAdmin, adminUserRoutes);
+app.use('/api/admin/admins', authenticateAdmin, adminUserRoutes);
 app.use('/api/admin/student-management', authenticateAdmin, studentManagementRoutes);
 app.use('/api', lmsRoutes);
 app.use('/api/student', authenticateUser, studentPaymentsRoutes);
@@ -2509,16 +2509,7 @@ app.post('/api/admin/batches', authenticateAdmin, async (req, res) => {
   try {
     const { courseId, batchName, startDate, endDate, classTime } = req.body;
     
-    // Create Google Drive Folder immediately using EXACTLY the batchName
-    const BASE_DRIVE_FOLDER_ID = '1CU5-fkzNx34OcrXYv0JLN4otc3k43WXm';
-    let driveFolderId = null;
-    try {
-      driveFolderId = await createDriveFolder(batchName, BASE_DRIVE_FOLDER_ID);
-    } catch (driveErr) {
-      console.error("Failed to create drive folder during batch creation:", driveErr);
-      // We log but don't fail the batch creation if drive fails, to prevent total blockage if oauth fails.
-    }
-
+    // Create new batches with Cloudflare R2 storage by default
     const batch = await prisma.batch.create({
       data: {
         courseId: parseInt(courseId),
@@ -2526,7 +2517,7 @@ app.post('/api/admin/batches', authenticateAdmin, async (req, res) => {
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         classTime,
-        driveFolderId
+        storageType: 'r2' // Set storage type to Cloudflare R2
       }
     });
     return res.json(batch);
