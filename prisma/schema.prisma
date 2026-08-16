@@ -8,21 +8,29 @@ datasource db {
 }
 
 model Lead {
-  id              Int      @id @default(autoincrement())
-  name            String
-  phone           String
-  email           String
-  courseInterest  String   @map("course_interest")
-  message         String?
-  source          String   @default("website")
-  status          String   @default("New")
-  notes           String?
-  reminderCount   Int      @default(0) @map("reminder_count")
-  lastReminderAt  DateTime? @map("last_reminder_at")
-  createdAt       DateTime @default(now()) @map("created_at")
+  id                    Int       @id @default(autoincrement())
+  name                  String
+  phone                 String
+  email                 String
+  courseInterest        String    @map("course_interest")
+  message               String?
+  source                String    @default("website")
+  status                String    @default("New")
+  notes                 String?
+  leadType              String    @default("course") @map("lead_type")
+  stage                 String    @default("NEW")
+  webinarStage          String    @default("NEW") @map("webinar_stage")
+  notInterestedReason   String?   @map("not_interested_reason")
+  assignedCoordinatorId Int?      @map("assigned_coordinator_id")
+  reminderCount         Int       @default(0) @map("reminder_count")
+  lastReminderAt        DateTime? @map("last_reminder_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+
+  coordinator           Admin?    @relation(fields: [assignedCoordinatorId], references: [id], onDelete: SetNull)
 
   @@index([phone])
   @@index([email])
+  @@index([assignedCoordinatorId])
   @@map("leads")
 }
 
@@ -38,6 +46,10 @@ model Admin {
   classSessions ClassSession[]
   assignments Assignment[]
   exams BatchExam[]
+  assignedLeads Lead[]
+  coordinatorCommissions CoordinatorCommission[]
+  coordinatorPaySlips CoordinatorPaySlip[]
+  mentorPayouts MentorPayout[]
 
   @@map("admins")
 }
@@ -747,17 +759,19 @@ model ExamQuestion {
 }
 
 model ExamSubmission {
-  id          Int      @id @default(autoincrement())
-  examId      Int      @map("exam_id")
-  userId      Int      @map("user_id")
-  status      String   @default("submitted") // in_progress, submitted, graded
-  totalScore  Int?     @map("total_score")
-  submittedAt DateTime @default(now()) @map("submitted_at")
-  gradedAt    DateTime? @map("graded_at")
+  id                Int       @id @default(autoincrement())
+  examId            Int       @map("exam_id")
+  userId            Int       @map("user_id")
+  status            String    @default("submitted") // in_progress, submitted, graded, reassigned
+  totalScore        Int?      @map("total_score")
+  timeTakenSeconds  Int?      @map("time_taken_seconds")
+  isReassigned      Boolean   @default(false) @map("is_reassigned")
+  submittedAt       DateTime  @default(now()) @map("submitted_at")
+  gradedAt          DateTime? @map("graded_at")
 
-  exam        BatchExam @relation(fields: [examId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  answers     ExamAnswer[]
+  exam              BatchExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers           ExamAnswer[]
 
   @@unique([examId, userId])
   @@map("exam_submissions")
@@ -767,7 +781,7 @@ model ExamAnswer {
   id              Int      @id @default(autoincrement())
   submissionId    Int      @map("submission_id")
   questionId      Int      @map("question_id")
-  answerText      String   @map("answer_text") // the selected option or written text
+  answerText      String   @map("answer_text")
   marksObtained   Int?     @map("marks_obtained")
   mentorRemarks   String?  @map("mentor_remarks")
 
@@ -776,5 +790,46 @@ model ExamAnswer {
 
   @@unique([submissionId, questionId])
   @@map("exam_answers")
+}
+
+model CoordinatorCommission {
+  id                  Int      @id @default(autoincrement())
+  coordinatorId       Int      @map("coordinator_id")
+  ratePerRegistration Float    @default(500) @map("rate_per_registration")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  coordinator         Admin    @relation(fields: [coordinatorId], references: [id], onDelete: Cascade)
+
+  @@map("coordinator_commissions")
+}
+
+model CoordinatorPaySlip {
+  id            Int      @id @default(autoincrement())
+  coordinatorId Int      @map("coordinator_id")
+  amount        Float
+  period        String
+  studentCount  Int      @default(0) @map("student_count")
+  paymentStatus String   @default("completed") @map("payment_status")
+  paidAt        DateTime @default(now()) @map("paid_at")
+  notes         String?
+
+  coordinator   Admin    @relation(fields: [coordinatorId], references: [id], onDelete: Cascade)
+
+  @@map("coordinator_pay_slips")
+}
+
+model MentorPayout {
+  id            Int      @id @default(autoincrement())
+  mentorId      Int      @map("mentor_id")
+  amount        Float
+  period        String
+  classesCount  Int      @default(0) @map("classes_count")
+  paymentStatus String   @default("completed") @map("payment_status")
+  paidAt        DateTime @default(now()) @map("paid_at")
+  notes         String?
+
+  mentor        Admin    @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@map("mentor_payouts")
 }
 
