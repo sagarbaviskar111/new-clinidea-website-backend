@@ -1,8 +1,7 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
 const emailService = require('./emailService');
 
-const prisma = new PrismaClient();
+const db = require('../database');
 
 // Configuration for Drip Campaign Intervals (in days)
 const DRIP_INTERVALS = [
@@ -17,7 +16,7 @@ const startLeadDripEngine = () => {
   cron.schedule('0 10 * * *', async () => {
     console.log("[LeadDripEngine] Running daily check for enquiry reminders...");
     try {
-      const activeLeads = await prisma.lead.findMany({
+      const activeLeads = await db.lead.findMany({
         where: {
           status: 'New',
           reminderCount: { lt: 4 }
@@ -37,7 +36,7 @@ const startLeadDripEngine = () => {
           
           await emailService.sendEnquiryReminder(lead, nextReminder.reminderNumber);
 
-          await prisma.lead.update({
+          await db.lead.update({
             where: { id: lead.id },
             data: {
               reminderCount: nextReminder.reminderNumber,

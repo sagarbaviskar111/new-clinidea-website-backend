@@ -1,12 +1,11 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function main() {
-  const contents = await prisma.lMSContent.findMany();
+  const contents = await db.lMSContent.findMany();
   console.log("Total LMS Contents:", contents.length);
   console.log(contents);
 }
 
 main()
   .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect());
+  .finally(() => db.$disconnect());

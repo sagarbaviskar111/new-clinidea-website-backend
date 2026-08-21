@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('../database');
+const { authenticateAdmin } = require('../middleware/auth');
+
+router.use(authenticateAdmin);
 const ensureSuperAdmin = (req, res, next) => {
   if (req.adminRole !== 'superadmin') {
     return res.status(403).json({ error: 'Forbidden: Super Admin only' });
@@ -12,7 +14,7 @@ const ensureSuperAdmin = (req, res, next) => {
 router.get('/batches', ensureSuperAdmin, async (req, res) => {
   try {
     // A batch is "started" if startDate is not null and is in the past
-    const batches = await prisma.batch.findMany({
+    const batches = await db.batch.findMany({
       where: {
         startDate: {
           not: null,
@@ -40,8 +42,8 @@ router.get('/batch/:batchId', ensureSuperAdmin, async (req, res) => {
     const { batchId } = req.params;
     
     // Find all users enrolled in this batch
-    const enrollments = await prisma.enrollment.findMany({
-      where: { batchId: parseInt(batchId) },
+    const enrollments = await db.enrollment.findMany({
+      where: { batchId: String(batchId) },
       include: {
         user: {
           include: {
@@ -134,10 +136,10 @@ router.post('/configure-fees', ensureSuperAdmin, async (req, res) => {
     }
 
     // Use transaction to ensure consistency
-    await prisma.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       // Update enrollment
       await tx.enrollment.update({
-        where: { id: parseInt(enrollmentId) },
+        where: { id: String(enrollmentId) },
         data: {
           totalFees: parseFloat(totalFees),
           feePlanType,
@@ -150,18 +152,18 @@ router.post('/configure-fees', ensureSuperAdmin, async (req, res) => {
       // so we don't duplicate them if admin updates plan
       await tx.payment.deleteMany({
         where: {
-          userId: parseInt(userId),
+          userId: String(userId),
           paymentType: 'fee_installment',
           paymentStatus: 'pending'
         }
       });
 
       // Create new payments
-      const enrollment = await tx.enrollment.findUnique({ where: { id: parseInt(enrollmentId) } });
+      const enrollment = await tx.enrollment.findUnique({ where: { id: String(enrollmentId) } });
       for (const inst of installments) {
         await tx.payment.create({
           data: {
-            userId: parseInt(userId),
+            userId: String(userId),
             courseName: enrollment.courseName,
             amount: inst.amount,
             paymentStatus: 'pending',
@@ -187,8 +189,8 @@ router.post('/toggle-block', ensureSuperAdmin, async (req, res) => {
     
     if (!userId) return res.status(400).json({ error: 'User ID required' });
     
-    await prisma.user.update({
-      where: { id: parseInt(userId) },
+    await db.user.update({
+      where: { id: String(userId) },
       data: {
         adminUnblocked: blockAction === 'unblock'
       }

@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function resetTestData() {
   console.log("Starting test data reset...");
@@ -9,34 +8,34 @@ async function resetTestData() {
     // Thanks to Prisma's CASCADE deletes, deleting Users and Batches will clean up most related records automatically.
     
     console.log("Deleting Leads...");
-    await prisma.lead.deleteMany();
+    await db.lead.deleteMany();
 
     console.log("Deleting Users (Students/Mentors)...");
-    await prisma.user.deleteMany();
+    await db.user.deleteMany();
 
     console.log("Deleting Batches...");
-    await prisma.batch.deleteMany();
+    await db.batch.deleteMany();
 
     console.log("Deleting Events...");
-    await prisma.event.deleteMany();
+    await db.event.deleteMany();
 
     console.log("Deleting HR Campaigns...");
-    await prisma.hRCampaign.deleteMany();
+    await db.hRCampaign.deleteMany();
 
     console.log("Deleting Testimonials...");
-    await prisma.testimonial.deleteMany();
+    await db.testimonial.deleteMany();
 
     console.log("Deleting Blogs...");
-    await prisma.blog.deleteMany();
+    await db.blog.deleteMany();
 
     console.log("Deleting Placements...");
-    await prisma.placement.deleteMany();
+    await db.placement.deleteMany();
 
     console.log("Deleting Email Accounts...");
-    await prisma.emailAccount.deleteMany();
+    await db.emailAccount.deleteMany();
 
     console.log("Deleting Admin Audit Logs...");
-    await prisma.adminAuditLog.deleteMany();
+    await db.adminAuditLog.deleteMany();
 
     console.log("Test data has been successfully wiped!");
     console.log("Admins and Courses have been retained.");
@@ -44,7 +43,7 @@ async function resetTestData() {
   } catch (error) {
     console.error("Error during reset:", error);
   } finally {
-    await prisma.$disconnect();
+    await db.$disconnect();
   }
 }
 

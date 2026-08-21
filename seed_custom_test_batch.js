@@ -1,7 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function createTestBatchAndStudents() {
   console.log('--- Creating Fresh Test Batch & Students for Live Testing ---');
@@ -9,14 +8,14 @@ async function createTestBatchAndStudents() {
   const hashedPassword = await bcrypt.hash('123456', 10);
 
   // 1. Ensure Mentor Account
-  const mentor = await prisma.admin.upsert({
+  const mentor = await db.admin.upsert({
     where: { email: 'mentor@clinidea.in' },
     update: { password: hashedPassword, role: 'mentor' },
     create: { email: 'mentor@clinidea.in', password: hashedPassword, role: 'mentor' }
   });
 
   // 2. Ensure Course Master
-  const course = await prisma.course.upsert({
+  const course = await db.course.upsert({
     where: { slug: 'clinical-research-cr-pv-dm-course' },
     update: { name: 'Advanced Clinical Research & Pharmacovigilance (CR-PV)' },
     create: {
@@ -29,7 +28,7 @@ async function createTestBatchAndStudents() {
   });
 
   // 3. Create Dedicated Test Batch 2026-B
-  const testBatch = await prisma.batch.upsert({
+  const testBatch = await db.batch.upsert({
     where: { id: 2 },
     update: { batchName: 'Clinical Research & PV Batch 2026-B', courseId: course.id },
     create: {
@@ -43,7 +42,7 @@ async function createTestBatchAndStudents() {
   });
 
   // 4. Assign Mentor to Batch 2026-B
-  await prisma.batchMentor.upsert({
+  await db.batchMentor.upsert({
     where: { batchId_mentorId_moduleName: { batchId: testBatch.id, mentorId: mentor.id, moduleName: 'Pharmacovigilance & GCP' } },
     update: {},
     create: {
@@ -77,7 +76,7 @@ async function createTestBatchAndStudents() {
 
   for (let i = 0; i < testStudents.length; i++) {
     const s = testStudents[i];
-    const user = await prisma.user.upsert({
+    const user = await db.user.upsert({
       where: { email: s.email },
       update: { password: hashedPassword, registeredCourse: s.courseName },
       create: {
@@ -92,7 +91,7 @@ async function createTestBatchAndStudents() {
       }
     });
 
-    await prisma.enrollment.upsert({
+    await db.enrollment.upsert({
       where: { id: 10 + i },
       update: { userId: user.id, batchId: testBatch.id },
       create: {
@@ -112,7 +111,7 @@ async function createTestBatchAndStudents() {
   }
 
   // 6. Create Live Session for this batch
-  await prisma.classSession.create({
+  await db.classSession.create({
     data: {
       batchId: testBatch.id,
       mentorId: mentor.id,
@@ -125,7 +124,7 @@ async function createTestBatchAndStudents() {
   });
 
   // 7. Create Study Material
-  await prisma.lMSContent.create({
+  await db.lMSContent.create({
     data: {
       batchId: testBatch.id,
       title: 'Module 1: Signal Detection & ICSR Case Processing Guide',
@@ -137,7 +136,7 @@ async function createTestBatchAndStudents() {
   });
 
   // 8. Create MCQ Exam for this batch
-  const exam = await prisma.batchExam.create({
+  const exam = await db.batchExam.create({
     data: {
       batchId: testBatch.id,
       mentorId: mentor.id,
@@ -148,7 +147,7 @@ async function createTestBatchAndStudents() {
     }
   });
 
-  await prisma.examQuestion.create({
+  await db.examQuestion.create({
     data: {
       examId: exam.id,
       questionText: 'Which of the following is mandatory when submitting an expedited ICSR report?',
@@ -164,4 +163,4 @@ async function createTestBatchAndStudents() {
 
 createTestBatchAndStudents()
   .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect());
+  .finally(() => db.$disconnect());

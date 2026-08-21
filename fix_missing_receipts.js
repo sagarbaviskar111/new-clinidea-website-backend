@@ -1,16 +1,15 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 const { generateReceiptPDF } = require('./utils/pdf_generator');
 
 async function fixMissingReceipts() {
   console.log("Looking for users with registrationFeePaid=true but no payment record...");
-  const users = await prisma.user.findMany({
+  const users = await db.user.findMany({
     where: { registrationFeePaid: true }
   });
 
   let fixedCount = 0;
   for (const user of users) {
-    const existingPayment = await prisma.payment.findFirst({
+    const existingPayment = await db.payment.findFirst({
       where: { userId: user.id, paymentType: 'registration' }
     });
 
@@ -31,7 +30,7 @@ async function fixMissingReceipts() {
         feesPending: 0
       });
 
-      await prisma.payment.create({
+      await db.payment.create({
         data: {
           userId: user.id,
           courseName: 'Registration Fees',
@@ -45,7 +44,7 @@ async function fixMissingReceipts() {
         }
       });
 
-      await prisma.user.update({
+      await db.user.update({
         where: { id: user.id },
         data: { registrationReceiptUrl: pdfUrl }
       });
@@ -56,4 +55,4 @@ async function fixMissingReceipts() {
   console.log(`Finished fixing ${fixedCount} missing receipts.`);
 }
 
-fixMissingReceipts().catch(console.error).finally(() => prisma.$disconnect());
+fixMissingReceipts().catch(console.error).finally(() => db.$disconnect());

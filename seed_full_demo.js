@@ -1,7 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function seedFullDemo() {
   console.log('--- Starting Full Demo Data Seeding for All 4 Roles ---');
@@ -10,37 +9,37 @@ async function seedFullDemo() {
 
   // 1. Seed Admins & Roles
   console.log('1. Seeding Admin, Mentor & Coordinator Accounts...');
-  const superadmin = await prisma.admin.upsert({
+  const superadmin = await db.admin.upsert({
     where: { email: 'admin@clinidea.in' },
     update: { password: hashedPassword, role: 'superadmin' },
     create: { email: 'admin@clinidea.in', password: hashedPassword, role: 'superadmin' }
   });
 
-  await prisma.admin.upsert({
+  await db.admin.upsert({
     where: { email: 'admin@example.com' },
     update: { password: hashedPassword, role: 'superadmin' },
     create: { email: 'admin@example.com', password: hashedPassword, role: 'superadmin' }
   });
 
-  const mentor = await prisma.admin.upsert({
+  const mentor = await db.admin.upsert({
     where: { email: 'mentor@clinidea.in' },
     update: { password: hashedPassword, role: 'mentor' },
     create: { email: 'mentor@clinidea.in', password: hashedPassword, role: 'mentor' }
   });
 
-  await prisma.admin.upsert({
+  await db.admin.upsert({
     where: { email: 'mentor@example.com' },
     update: { password: hashedPassword, role: 'mentor' },
     create: { email: 'mentor@example.com', password: hashedPassword, role: 'mentor' }
   });
 
-  const coordinator = await prisma.admin.upsert({
+  const coordinator = await db.admin.upsert({
     where: { email: 'coordinator@clinidea.in' },
     update: { password: hashedPassword, role: 'coordinator' },
     create: { email: 'coordinator@clinidea.in', password: hashedPassword, role: 'coordinator' }
   });
 
-  await prisma.admin.upsert({
+  await db.admin.upsert({
     where: { email: 'coordinator@example.com' },
     update: { password: hashedPassword, role: 'coordinator' },
     create: { email: 'coordinator@example.com', password: hashedPassword, role: 'coordinator' }
@@ -48,7 +47,7 @@ async function seedFullDemo() {
 
   // 2. Seed Course & Batch
   console.log('2. Seeding Course & Batch...');
-  const course = await prisma.course.upsert({
+  const course = await db.course.upsert({
     where: { slug: 'clinical-research-cr-pv-dm-course' },
     update: { name: 'Advanced Clinical Research & Pharmacovigilance (CR-PV)' },
     create: {
@@ -60,7 +59,7 @@ async function seedFullDemo() {
     }
   });
 
-  const batch = await prisma.batch.upsert({
+  const batch = await db.batch.upsert({
     where: { id: 1 },
     update: { batchName: 'Clinical Research 2026-A', courseId: course.id },
     create: {
@@ -73,7 +72,7 @@ async function seedFullDemo() {
   });
 
   // Map Mentor to Batch
-  await prisma.batchMentor.upsert({
+  await db.batchMentor.upsert({
     where: { batchId_mentorId_moduleName: { batchId: batch.id, mentorId: mentor.id, moduleName: 'General Clinical Research' } },
     update: {},
     create: {
@@ -85,7 +84,7 @@ async function seedFullDemo() {
 
   // 3. Seed Student User & Profile
   console.log('3. Seeding Student Account & Profile...');
-  const studentUser = await prisma.user.upsert({
+  const studentUser = await db.user.upsert({
     where: { email: 'student@clinidea.in' },
     update: { password: hashedPassword, registeredCourse: 'Clinical Research & PV' },
     create: {
@@ -100,7 +99,7 @@ async function seedFullDemo() {
     }
   });
 
-  const devStudent = await prisma.user.upsert({
+  const devStudent = await db.user.upsert({
     where: { email: 'student@example.com' },
     update: { password: hashedPassword, registeredCourse: 'Clinical Research & PV' },
     create: {
@@ -115,7 +114,7 @@ async function seedFullDemo() {
     }
   });
 
-  const studentUser1 = await prisma.user.upsert({
+  const studentUser1 = await db.user.upsert({
     where: { email: 'student1@clinidea.in' },
     update: { password: hashedPassword, registeredCourse: 'Clinical Research & PV' },
     create: {
@@ -130,7 +129,7 @@ async function seedFullDemo() {
     }
   });
 
-  const studentUser2 = await prisma.user.upsert({
+  const studentUser2 = await db.user.upsert({
     where: { email: 'student2@clinidea.in' },
     update: { password: hashedPassword, registeredCourse: 'Clinical Research & PV' },
     create: {
@@ -146,7 +145,7 @@ async function seedFullDemo() {
   });
 
   // Student Enrollments
-  await prisma.enrollment.upsert({
+  await db.enrollment.upsert({
     where: { id: 1 },
     update: { userId: studentUser.id, batchId: batch.id },
     create: {
@@ -163,7 +162,7 @@ async function seedFullDemo() {
     }
   });
 
-  await prisma.enrollment.upsert({
+  await db.enrollment.upsert({
     where: { id: 2 },
     update: { userId: studentUser1.id, batchId: batch.id },
     create: {
@@ -180,7 +179,7 @@ async function seedFullDemo() {
     }
   });
 
-  await prisma.enrollment.upsert({
+  await db.enrollment.upsert({
     where: { id: 3 },
     update: { userId: studentUser2.id, batchId: batch.id },
     create: {
@@ -199,7 +198,7 @@ async function seedFullDemo() {
 
   // 4. Seed Live Session & Attendance
   console.log('4. Seeding Live Sessions & Attendance...');
-  const session = await prisma.classSession.create({
+  const session = await db.classSession.create({
     data: {
       batchId: batch.id,
       mentorId: mentor.id,
@@ -211,7 +210,7 @@ async function seedFullDemo() {
     }
   });
 
-  await prisma.attendance.create({
+  await db.attendance.create({
     data: {
       userId: studentUser.id,
       classSessionId: session.id,
@@ -221,7 +220,7 @@ async function seedFullDemo() {
 
   // 5. Seed LMS Study Content
   console.log('5. Seeding LMS Study Material...');
-  await prisma.lMSContent.create({
+  await db.lMSContent.create({
     data: {
       batchId: batch.id,
       title: 'ICH-GCP E6(R2) Guidelines Manual',
@@ -232,7 +231,7 @@ async function seedFullDemo() {
     }
   });
 
-  await prisma.lMSContent.create({
+  await db.lMSContent.create({
     data: {
       batchId: batch.id,
       title: 'Pharmacovigilance Signal Detection Recording',
@@ -245,7 +244,7 @@ async function seedFullDemo() {
 
   // 6. Seed Exam & Student Result
   console.log('6. Seeding MCQ Exam & Result...');
-  const exam = await prisma.batchExam.create({
+  const exam = await db.batchExam.create({
     data: {
       batchId: batch.id,
       mentorId: mentor.id,
@@ -256,7 +255,7 @@ async function seedFullDemo() {
     }
   });
 
-  await prisma.examQuestion.createMany({
+  await db.examQuestion.createMany({
     data: [
       {
         examId: exam.id,
@@ -275,7 +274,7 @@ async function seedFullDemo() {
     ]
   });
 
-  await prisma.examSubmission.create({
+  await db.examSubmission.create({
     data: {
       examId: exam.id,
       userId: studentUser.id,
@@ -288,7 +287,7 @@ async function seedFullDemo() {
 
   // 7. Seed Student Assignment
   console.log('7. Seeding Assignment & Submission...');
-  const assignment = await prisma.assignment.create({
+  const assignment = await db.assignment.create({
     data: {
       batchId: batch.id,
       mentorId: mentor.id,
@@ -299,7 +298,7 @@ async function seedFullDemo() {
     }
   });
 
-  await prisma.assignmentSubmission.create({
+  await db.assignmentSubmission.create({
     data: {
       assignmentId: assignment.id,
       userId: studentUser.id,
@@ -312,8 +311,8 @@ async function seedFullDemo() {
 
   // 8. Seed Fee Payments & Receipts
   console.log('8. Seeding Payment Receipts...');
-  await prisma.payment.deleteMany({});
-  await prisma.payment.createMany({
+  await db.payment.deleteMany({});
+  await db.payment.createMany({
     data: [
       { userId: studentUser.id, courseName: course.name, amount: 5000, paymentType: 'registration', paymentStatus: 'completed', transactionId: 'TXN10001', receiptNumber: 5001 },
       { userId: studentUser.id, courseName: course.name, amount: 20000, paymentType: 'installment_1', paymentStatus: 'completed', transactionId: 'TXN10002', receiptNumber: 5002 },
@@ -323,8 +322,8 @@ async function seedFullDemo() {
 
   // 9. Seed Approved Certificates
   console.log('9. Seeding Approved Certificates...');
-  await prisma.certificate.deleteMany({});
-  await prisma.certificate.createMany({
+  await db.certificate.deleteMany({});
+  await db.certificate.createMany({
     data: [
       { userId: studentUser.id, courseId: course.id, batchId: batch.id, certificateType: 'course_completion', certificateId: 'CLIN-CC-2026-101', issueDate: new Date(), fileUrl: '/certificates/completion.pdf', status: 'approved' },
       { userId: studentUser.id, courseId: course.id, batchId: batch.id, certificateType: 'gcp', certificateId: 'CLIN-GCP-2026-101', issueDate: new Date(), fileUrl: '/certificates/gcp.pdf', status: 'approved' },
@@ -334,8 +333,8 @@ async function seedFullDemo() {
 
   // 10. Seed Student Coordinator Leads Pipeline
   console.log('10. Seeding Coordinator Course & Webinar Leads...');
-  await prisma.lead.deleteMany({});
-  await prisma.lead.createMany({
+  await db.lead.deleteMany({});
+  await db.lead.createMany({
     data: [
       { name: 'Dr. Rahul Deshmukh', phone: '9876500001', email: 'rahul.d@gmail.com', courseInterest: 'Clinical Research & PV', source: 'Google Ads', stage: 'NEW', webinarStage: 'NEW', assignedCoordinatorId: coordinator.id },
       { name: 'Pooja Kulkarni', phone: '9876500002', email: 'pooja.k@gmail.com', courseInterest: 'Pharmacovigilance', source: 'Meta Ads', stage: 'CONTACTED', webinarStage: 'CONTACTED_WEBINAR', assignedCoordinatorId: coordinator.id },
@@ -350,4 +349,4 @@ async function seedFullDemo() {
 
 seedFullDemo()
   .catch(e => { console.error('Error seeding demo data:', e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); });
+  .finally(async () => { await db.$disconnect(); });

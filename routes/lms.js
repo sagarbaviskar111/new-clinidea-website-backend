@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
 const multer = require('multer');
 const { createDriveFolder, uploadToDrive, uploadFileToDrive, deleteDriveFile, findDriveFolder, getDriveFileStream } = require('../utils/googleDrive');
 const { uploadToR2, deleteFromR2, getPresignedUrl, getFileStreamFromR2 } = require('../utils/cloudflareR2');
@@ -9,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
 
-const prisma = new PrismaClient();
+const db = require('../database');
+const { uploadToYouTube, isYouTubeAvailable } = require('../utils/youtube');
 
 // Disk storage for large file uploads to prevent memory issues and Network Errors
 const storage = multer.diskStorage({
@@ -36,9 +36,9 @@ const BASE_DRIVE_FOLDER_ID = process.env.BASE_DRIVE_FOLDER_ID || '1CU5-fkzNx34Oc
 // Get all mentors
 router.get('/admin/mentors', async (req, res) => {
   try {
-    const mentors = await prisma.admin.findMany({
+    const mentors = await db.admin.findMany({
       where: { role: 'mentor' },
-      select: { id: true, email: true }
+      select: { id: true, email: true, name: true, fullName: true }
     });
     res.json(mentors);
   } catch (err) {
@@ -49,31 +49,21 @@ router.get('/admin/mentors', async (req, res) => {
 // Assign mentor to a module within a batch
 router.post('/admin/batches/:batchId/mentors', async (req, res) => {
   try {
-    const batchId = parseInt(req.params.batchId);
+    const batchId = String(req.params.batchId);
     const { mentorId, moduleName } = req.body;
     
     if (!mentorId || !moduleName) return res.status(400).json({ error: 'mentorId and moduleName are required' });
 
-    const batch = await prisma.batch.findUnique({ where: { id: batchId }, include: { course: true } });
+    const batch = await db.batch.findUnique({ where: { id: batchId }, include: { course: true } });
     if (!batch) return res.status(404).json({ error: 'Batch not found' });
     
-    let batchFolderId = batch.driveFolderId;
-    if (!batchFolderId) {
-      const folderName = batch.batchName; // Changed to exactly match the Batch Name as requested
-      batchFolderId = await createDriveFolder(folderName, BASE_DRIVE_FOLDER_ID);
-      await prisma.batch.update({ where: { id: batchId }, data: { driveFolderId: batchFolderId } });
-    }
-    
-    const moduleFolderId = await createDriveFolder(moduleName, batchFolderId);
-    
-    await createDriveFolder('Presentations', moduleFolderId);
-    await createDriveFolder('Recorded Sessions', moduleFolderId);
-    await createDriveFolder('Additional Study Material', moduleFolderId);
+    // Google Drive integration removed as requested. Saving local placeholder folder ID.
+    const moduleFolderId = "local_folder_" + Date.now();
 
-    const batchMentor = await prisma.batchMentor.create({
+    const batchMentor = await db.batchMentor.create({
       data: {
         batchId,
-        mentorId: parseInt(mentorId),
+        mentorId: String(mentorId),
         moduleName,
         folderId: moduleFolderId
       }
@@ -82,22 +72,36 @@ router.post('/admin/batches/:batchId/mentors', async (req, res) => {
     res.json(batchMentor);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to assign mentor and setup Drive folders. ' + err.message });
+    res.status(500).json({ error: 'Failed to assign mentor. ' + err.message });
+  }
+});
+
+// Remove mentor assignment from a batch
+router.delete('/admin/batch-mentors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.batchMentor.delete({
+      where: { id: String(id) }
+    });
+    res.json({ success: true, message: 'Mentor assignment removed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to remove mentor assignment: ' + err.message });
   }
 });
 
 // Initialize Google Drive folder for a batch
 router.post('/admin/batches/:batchId/init-drive', async (req, res) => {
   try {
-    const batchId = parseInt(req.params.batchId);
-    const batch = await prisma.batch.findUnique({ where: { id: batchId }, include: { course: true } });
+    const batchId = String(req.params.batchId);
+    const batch = await db.batch.findUnique({ where: { id: batchId }, include: { course: true } });
     if (!batch) return res.status(404).json({ error: 'Batch not found' });
     if (batch.driveFolderId) return res.status(400).json({ error: 'Drive folder already exists' });
 
-    const folderName = `${batch.course.name} - ${batch.batchName} (Batch ID: ${batch.id})`;
-    const folderId = await createDriveFolder(folderName, BASE_DRIVE_FOLDER_ID);
+    // Storing local placeholder folder ID
+    const folderId = "local_drive_folder_" + Date.now();
 
-    const updatedBatch = await prisma.batch.update({
+    const updatedBatch = await db.batch.update({
       where: { id: batchId },
       data: { driveFolderId: folderId }
     });
@@ -105,7 +109,7 @@ router.post('/admin/batches/:batchId/init-drive', async (req, res) => {
     res.json(updatedBatch);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to initialize Drive folder: ' + err.message });
+    res.status(500).json({ error: 'Failed to initialize folder: ' + err.message });
   }
 });
 
@@ -120,6 +124,7 @@ const authenticateMentor = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super-secret-clinidea-key');
     req.admin = decoded;
+    req.admin.adminId = decoded.adminId || decoded.id;
     // Assuming 'role' is in token, or we allow superadmins to act as mentors too
     if (decoded.role !== 'mentor' && decoded.role !== 'superadmin') {
       return res.status(403).json({ error: 'Only mentors can access this' });
@@ -134,13 +139,13 @@ const authenticateMentor = (req, res, next) => {
 router.get('/mentor/batches', authenticateMentor, async (req, res) => {
   try {
     if (req.admin.role === 'superadmin') {
-      const batches = await prisma.batch.findMany({
+      const batches = await db.batch.findMany({
         include: { course: true, _count: { select: { lmsContents: true } } },
         orderBy: { createdAt: 'desc' }
       });
       res.json(batches);
     } else {
-      const mappings = await prisma.batchMentor.findMany({
+      const mappings = await db.batchMentor.findMany({
         where: { mentorId: req.admin.adminId },
         include: { batch: { include: { course: true } } }
       });
@@ -159,8 +164,8 @@ router.get('/mentor/batches', authenticateMentor, async (req, res) => {
 // Get content for a specific batch (Mentor view)
 router.get('/mentor/batches/:batchId/content', authenticateMentor, async (req, res) => {
   try {
-    const contents = await prisma.lMSContent.findMany({
-      where: { batchId: parseInt(req.params.batchId) },
+    const contents = await db.lMSContent.findMany({
+      where: { batchId: String(req.params.batchId) },
       orderBy: { createdAt: 'desc' }
     });
     res.json(contents);
@@ -169,16 +174,46 @@ router.get('/mentor/batches/:batchId/content', authenticateMentor, async (req, r
   }
 });
 
+// Get students for a specific batch (Mentor view)
+router.get('/mentor/batches/:batchId/students', authenticateMentor, async (req, res) => {
+  try {
+    const batchId = String(req.params.batchId);
+    
+    // Fetch all enrollments for this batch
+    const enrollments = await db.enrollment.findMany({
+      where: { batchId },
+      include: {
+        user: true
+      }
+    });
+
+    // Extract user objects
+    const students = enrollments.map(e => ({
+      id: e.user?.id || e.userId,
+      fullName: e.user?.fullName || 'N/A',
+      email: e.user?.email || 'N/A',
+      phone: e.user?.phone || 'N/A',
+      enrollmentStatus: e.enrollmentStatus || 'enrolled',
+      enrolledAt: e.createdAt
+    })).filter(s => s.id);
+
+    res.json(students);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch batch students: ' + err.message });
+  }
+});
+
 // Upload content to Google Drive and map to batch
 router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.single('file'), async (req, res) => {
   try {
-    const batchId = parseInt(req.params.batchId);
+    const batchId = String(req.params.batchId);
     const { title, description, folderType } = req.body; // folderType: 'Presentations' or 'Additional Study Material'
     const file = req.file;
 
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const batchMentor = await prisma.batchMentor.findFirst({
+    const batchMentor = await db.batchMentor.findFirst({
       where: { batchId, mentorId: req.admin.adminId }
     });
     
@@ -189,7 +224,7 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     let targetFolderId = null;
     let moduleName = 'General';
 
-    const batch = await prisma.batch.findUnique({ where: { id: batchId } });
+    const batch = await db.batch.findUnique({ where: { id: batchId } });
     if (!batch) return res.status(404).json({ error: 'Batch not found' });
     
     if (batchMentor) {
@@ -199,7 +234,7 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     // Handle Duplicate Naming for UI display
     let finalTitle = title;
     let counter = 1;
-    while (await prisma.lMSContent.findFirst({ where: { batchId, title: finalTitle } })) {
+    while (await db.lMSContent.findFirst({ where: { batchId, title: finalTitle } })) {
       finalTitle = `${title} (${counter})`;
       counter++;
     }
@@ -208,7 +243,20 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     let driveResult = null;
     let localFileUrl = null;
 
-    if (batch.storageType === 'local') {
+    if (file.mimetype.includes('video') && isYouTubeAvailable()) {
+      try {
+        console.log(`Uploading video "${finalTitle}" to YouTube...`);
+        const ytResult = await uploadToYouTube(file.path, finalTitle, description);
+        driveResult = {
+          fileId: ytResult.videoId,
+          webViewLink: ytResult.videoUrl
+        };
+      } finally {
+        if (file && fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      }
+    } else if (batch.storageType === 'local') {
       try {
         const destDir = path.join(__dirname, '..', 'uploads', 'lms');
         if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
@@ -240,38 +288,19 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
         if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
       }
     } else {
-      // Legacy Google Drive Logic
-      if (!batch.driveFolderId) {
-        const BASE_DRIVE_FOLDER_ID = process.env.BASE_DRIVE_FOLDER_ID || '1CU5-fkzNx34OcrXYv0JLN4otc3k43WXm';
-        const newFolderId = await createDriveFolder(batch.batchName, BASE_DRIVE_FOLDER_ID);
-        await prisma.batch.update({ where: { id: batchId }, data: { driveFolderId: newFolderId } });
-        batch.driveFolderId = newFolderId;
-      }
-
-      if (batchMentor) {
-        if (!batchMentor.folderId) {
-           const modFolderId = await createDriveFolder(moduleName, batch.driveFolderId);
-           await prisma.batchMentor.update({ where: { id: batchMentor.id }, data: { folderId: modFolderId } });
-           batchMentor.folderId = modFolderId;
-        }
-        
-        const subFolderName = folderType || 'Additional Study Material';
-        targetFolderId = await findDriveFolder(subFolderName, batchMentor.folderId);
-        if (!targetFolderId) {
-          targetFolderId = await createDriveFolder(subFolderName, batchMentor.folderId);
-        }
-      } else {
-        targetFolderId = batch.driveFolderId;
-      }
-
-      const driveFileName = ext ? `${finalTitle}${ext}` : file.originalname;
-
+      // Local File Storage Fallback (Google Drive Integration Removed)
       try {
-        driveResult = await uploadFileToDrive(file.path, driveFileName, file.mimetype, targetFolderId);
-      } finally {
-        if (file && fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
+        const destDir = path.join(__dirname, '..', 'uploads', 'lms');
+        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+        
+        const uniqueFileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+        const destPath = path.join(destDir, uniqueFileName);
+        
+        fs.renameSync(file.path, destPath);
+        localFileUrl = `/uploads/lms/${uniqueFileName}`;
+      } catch (err) {
+        if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        throw err;
       }
     }
 
@@ -282,7 +311,7 @@ router.post('/mentor/batches/:batchId/content', authenticateMentor, upload.singl
     else if (file.mimetype.includes('presentation') || file.mimetype.includes('powerpoint')) contentType = 'ppt';
 
     // Save metadata to database
-    const content = await prisma.lMSContent.create({
+    const content = await db.lMSContent.create({
       data: {
         batchId,
         title: finalTitle,
@@ -313,64 +342,41 @@ router.post('/mentor/live/finish-recording', authenticateMentor, upload.single('
       return res.status(400).json({ error: 'No video file provided' });
     }
 
-    const batchMentor = await prisma.batchMentor.findFirst({
-      where: { batchId: parseInt(batchId), mentorId: req.admin.adminId }
+    const batchMentor = await db.batchMentor.findFirst({
+      where: { batchId: String(batchId), mentorId: req.admin.adminId }
     });
 
-    let driveFolderId = null;
-    let moduleName = 'Live Sessions';
-
-    if (batchMentor) {
-      moduleName = batchMentor.moduleName;
-      driveFolderId = await findDriveFolder('Recorded Sessions', batchMentor.folderId);
-      if (!driveFolderId) driveFolderId = batchMentor.folderId; // fallback
-    } else {
-      const batch = await prisma.batch.findUnique({ where: { id: parseInt(batchId) } });
-      if (!batch) return res.status(404).json({ error: 'Batch not found' });
-      driveFolderId = batch.driveFolderId;
-      if (!driveFolderId) {
-        const folderName = `${batch.batchName} Recordings (Batch ID: ${batch.id})`;
-        driveFolderId = await createDriveFolder(folderName, BASE_DRIVE_FOLDER_ID);
-        await prisma.batch.update({ where: { id: parseInt(batchId) }, data: { driveFolderId } });
-      }
-    }
+    let driveResult = null;
+    let localFileUrl = null;
     
-    const dateObj = new Date();
-    const ddmmyyyy = `${String(dateObj.getDate()).padStart(2, '0')}${String(dateObj.getMonth() + 1).padStart(2, '0')}${dateObj.getFullYear()}`;
-    
-    let baseTitle = title || `Live_Class`;
-    let finalTitle = baseTitle;
-    let driveFileName = `${baseTitle}_${ddmmyyyy}`;
-    
-    let counter = 1;
-    while (await prisma.lMSContent.findFirst({ where: { batchId: parseInt(batchId), title: finalTitle } })) {
-      finalTitle = `${baseTitle} (${counter})`;
-      driveFileName = `${baseTitle}_${ddmmyyyy}_${counter}`;
-      counter++;
-    }
-
-    driveFileName = `${driveFileName.replace(/\s+/g, '_')}.webm`;
-    
-    // Upload to Drive
-    let driveResult;
     try {
-      driveResult = await uploadFileToDrive(file.path, driveFileName, file.mimetype || 'video/webm', driveFolderId);
-    } finally {
+      // Save recording locally to avoid downloads and external access
+      const destDir = path.join(__dirname, '..', 'uploads', 'lms');
+      if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+      
+      const uniqueFileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}.webm`;
+      const destPath = path.join(destDir, uniqueFileName);
+      
+      fs.renameSync(file.path, destPath);
+      localFileUrl = `/uploads/lms/${uniqueFileName}`;
+    } catch (err) {
       if (file && fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
       }
+      throw err;
     }
 
     // Create LMS content
-    const content = await prisma.lMSContent.create({
+    const content = await db.lMSContent.create({
       data: {
-        batchId: parseInt(batchId),
-        title: finalTitle,
+        batchId: String(batchId),
+        title: title || 'Live Class Session',
         description: 'Auto-recorded session',
         contentType: 'video',
         moduleName: 'Live Sessions',
-        driveFileId: driveResult.fileId,
-        driveWebViewLink: driveResult.webViewLink
+        driveFileId: driveResult ? driveResult.fileId : null,
+        driveWebViewLink: driveResult ? driveResult.webViewLink : null,
+        localFileUrl
       }
     });
 
@@ -385,8 +391,8 @@ router.post('/mentor/live/finish-recording', authenticateMentor, upload.single('
 router.put('/mentor/content/:contentId', authenticateMentor, async (req, res) => {
   try {
     const { title, moduleName } = req.body;
-    const content = await prisma.lMSContent.update({
-      where: { id: parseInt(req.params.contentId) },
+    const content = await db.lMSContent.update({
+      where: { id: String(req.params.contentId) },
       data: { title, moduleName }
     });
     res.json(content);
@@ -398,8 +404,8 @@ router.put('/mentor/content/:contentId', authenticateMentor, async (req, res) =>
 // Direct Delete Content (No approval required, deletes from Drive and Database instantly!)
 router.delete('/mentor/content/:contentId', authenticateMentor, async (req, res) => {
   try {
-    const contentId = parseInt(req.params.contentId);
-    const content = await prisma.lMSContent.findUnique({
+    const contentId = String(req.params.contentId);
+    const content = await db.lMSContent.findUnique({
       where: { id: contentId },
       include: { batch: true }
     });
@@ -422,7 +428,7 @@ router.delete('/mentor/content/:contentId', authenticateMentor, async (req, res)
     }
 
     // 2. Delete the record from database
-    await prisma.lMSContent.delete({
+    await db.lMSContent.delete({
       where: { id: contentId }
     });
 
@@ -439,10 +445,10 @@ router.post('/mentor/content/:contentId/request-delete', authenticateMentor, asy
     const { reason } = req.body;
     if (!reason) return res.status(400).json({ error: 'Reason is required' });
 
-    const content = await prisma.lMSContent.findUnique({ where: { id: parseInt(req.params.contentId) } });
+    const content = await db.lMSContent.findUnique({ where: { id: String(req.params.contentId) } });
     if (!content) return res.status(404).json({ error: 'Content not found' });
 
-    const deleteRequest = await prisma.contentDeleteRequest.create({
+    const deleteRequest = await db.contentDeleteRequest.create({
       data: {
         contentId: content.id,
         mentorId: req.admin.adminId,
@@ -462,7 +468,7 @@ router.post('/mentor/content/:contentId/request-delete', authenticateMentor, asy
 router.get('/admin/lms/delete-requests', async (req, res) => {
   // Ideally protect with authenticateAdmin, but using same router for simplicity or ensure admin auth
   try {
-    const requests = await prisma.contentDeleteRequest.findMany({
+    const requests = await db.contentDeleteRequest.findMany({
       where: { status: 'pending' },
       include: {
         content: true,
@@ -478,8 +484,8 @@ router.get('/admin/lms/delete-requests', async (req, res) => {
 
 router.put('/admin/lms/delete-requests/:id/approve', async (req, res) => {
   try {
-    const request = await prisma.contentDeleteRequest.findUnique({
-      where: { id: parseInt(req.params.id) },
+    const request = await db.contentDeleteRequest.findUnique({
+      where: { id: String(req.params.id) },
       include: { content: { include: { batch: true } } }
     });
     
@@ -501,10 +507,10 @@ router.put('/admin/lms/delete-requests/:id/approve', async (req, res) => {
     }
 
     // Delete from DB
-    await prisma.lMSContent.delete({ where: { id: request.content.id } });
+    await db.lMSContent.delete({ where: { id: request.content.id } });
     
     // Update request status
-    const updated = await prisma.contentDeleteRequest.update({
+    const updated = await db.contentDeleteRequest.update({
       where: { id: request.id },
       data: { status: 'approved' }
     });
@@ -518,8 +524,8 @@ router.put('/admin/lms/delete-requests/:id/approve', async (req, res) => {
 
 router.put('/admin/lms/delete-requests/:id/reject', async (req, res) => {
   try {
-    const updated = await prisma.contentDeleteRequest.update({
-      where: { id: parseInt(req.params.id) },
+    const updated = await db.contentDeleteRequest.update({
+      where: { id: String(req.params.id) },
       data: { status: 'rejected' }
     });
     res.json({ success: true, updated });
@@ -549,7 +555,7 @@ const authenticateStudent = (req, res, next) => {
 router.get('/student/content', authenticateStudent, async (req, res) => {
   try {
     // 1. Find all active enrollments for this student
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { userId: req.user.id, enrollmentStatus: { in: ['enrolled', 'active', 'completed', 'confirmed', 'registered'] } },
       select: { batchId: true, courseName: true, batch: { select: { batchName: true } } }
     });
@@ -561,7 +567,7 @@ router.get('/student/content', authenticateStudent, async (req, res) => {
     }
 
     // 2. Fetch all content for these batches
-    const rawContents = await prisma.lMSContent.findMany({
+    const rawContents = await db.lMSContent.findMany({
       where: { batchId: { in: batchIds } },
       orderBy: [
         { moduleName: 'asc' },
@@ -570,25 +576,8 @@ router.get('/student/content', authenticateStudent, async (req, res) => {
       include: { batch: { select: { batchName: true, course: { select: { name: true } } } } }
     });
 
-    // 3. Filter contents by enrolled modules
-    const allowedModules = new Set(['general', 'live sessions', 'additional study material', '']);
-    enrollments.forEach(e => {
-      const c = (e.courseName || '').toLowerCase();
-      if (c.includes('clinical research')) { allowedModules.add('clinical research'); allowedModules.add('cr'); }
-      if (c.includes('pharmacovigilance')) { allowedModules.add('pharmacovigilance'); allowedModules.add('pv'); }
-      if (c.includes('data management')) { allowedModules.add('data management'); allowedModules.add('cdm'); allowedModules.add('clinical data management'); }
-      if (c.includes('regulatory')) { allowedModules.add('regulatory affairs'); allowedModules.add('ra'); }
-      if (c.includes('writing')) { allowedModules.add('medical writing'); allowedModules.add('mw'); }
-      if (c.includes('coding')) { allowedModules.add('medical coding'); allowedModules.add('mc'); }
-    });
-
-    const contents = rawContents.filter(c => {
-      const m = (c.moduleName || '').toLowerCase();
-      for (const allowed of allowedModules) {
-        if (m === allowed || m.includes(allowed)) return true;
-      }
-      return false;
-    });
+    // 3. Keep all contents for the student's batch
+    const contents = rawContents;
 
     const enrolledBatchesData = enrollments
       .filter(e => e.batchId !== null)
@@ -629,7 +618,7 @@ router.post('/mentor/schedule-session', authenticateMentor, async (req, res) => 
       // Skip weekends (Saturday and Sunday) only for recurring schedules
       if (!isRecurring || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
         sessions.push({
-          batchId: parseInt(batchId),
+          batchId: String(batchId),
           title: title || 'Live Class',
           sessionDate: new Date(currentDate),
           sessionTime,
@@ -648,8 +637,8 @@ router.post('/mentor/schedule-session', authenticateMentor, async (req, res) => 
       daysCount++;
     }
 
-    const createdSessions = await prisma.$transaction(
-      sessions.map(s => prisma.classSession.create({ data: s }))
+    const createdSessions = await db.$transaction(
+      sessions.map(s => db.classSession.create({ data: s }))
     );
 
     res.status(201).json({ message: 'Sessions scheduled successfully', count: createdSessions.length });
@@ -662,8 +651,8 @@ router.post('/mentor/schedule-session', authenticateMentor, async (req, res) => 
 // Go Live: Update session status and send notifications
 router.post('/mentor/session/:id/live', authenticateMentor, async (req, res) => {
   try {
-    const sessionId = parseInt(req.params.id);
-    const session = await prisma.classSession.update({
+    const sessionId = String(req.params.id);
+    const session = await db.classSession.update({
       where: { id: sessionId },
       data: { status: 'live' },
       include: { batch: { include: { enrollments: true } } }
@@ -678,7 +667,7 @@ router.post('/mentor/session/:id/live', authenticateMentor, async (req, res) => 
       }));
 
       if (notifications.length > 0) {
-        await prisma.notification.createMany({ data: notifications });
+        await db.notification.createMany({ data: notifications });
       }
     }
 
@@ -693,7 +682,7 @@ router.post('/mentor/session/:id/live', authenticateMentor, async (req, res) => 
 // Get Unread Notifications
 router.get('/student/notifications', authenticateStudent, async (req, res) => {
   try {
-    const notifications = await prisma.notification.findMany({
+    const notifications = await db.notification.findMany({
       where: { userId: req.user.userId, isRead: false },
       orderBy: { createdAt: 'desc' }
     });
@@ -706,7 +695,7 @@ router.get('/student/notifications', authenticateStudent, async (req, res) => {
 // Mark Notifications as Read
 router.put('/student/notifications/read', authenticateStudent, async (req, res) => {
   try {
-    await prisma.notification.updateMany({
+    await db.notification.updateMany({
       where: { userId: req.user.userId, isRead: false },
       data: { isRead: true }
     });
@@ -720,13 +709,13 @@ router.put('/student/notifications/read', authenticateStudent, async (req, res) 
 router.get('/student/live-sessions', authenticateStudent, async (req, res) => {
   try {
     // Get user enrollments
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { userId: req.user.userId },
       select: { batchId: true }
     });
     const batchIds = enrollments.map(e => e.batchId).filter(id => id !== null);
 
-        const sessions = await prisma.classSession.findMany({
+        const sessions = await db.classSession.findMany({
       where: { 
         batchId: { in: batchIds },
         status: { in: ['upcoming', 'live'] } // exclude completed
@@ -745,8 +734,8 @@ router.get('/student/live-sessions', authenticateStudent, async (req, res) => {
 // Get Live Sessions for a specific batch (Mentor View)
 router.get('/mentor/batches/:batchId/live-sessions', authenticateMentor, async (req, res) => {
   try {
-    const batchId = parseInt(req.params.batchId);
-    const sessions = await prisma.classSession.findMany({
+    const batchId = String(req.params.batchId);
+    const sessions = await db.classSession.findMany({
       where: { batchId },
       orderBy: { sessionDate: 'asc' }
     });
@@ -762,9 +751,9 @@ router.get('/admin/batches/:batchId/download-all', async (req, res) => {
   try {
     // Note: Authentication should be ideally enforced, 
     // assuming it's protected by Nginx or a global admin middleware for /api/admin
-    const batchId = parseInt(req.params.batchId);
+    const batchId = String(req.params.batchId);
     
-    const batch = await prisma.batch.findUnique({
+    const batch = await db.batch.findUnique({
       where: { id: batchId }
     });
     
@@ -772,7 +761,7 @@ router.get('/admin/batches/:batchId/download-all', async (req, res) => {
       return res.status(404).json({ error: 'Batch not found' });
     }
 
-    const contents = await prisma.lMSContent.findMany({
+    const contents = await db.lMSContent.findMany({
       where: { batchId }
     });
 
@@ -838,7 +827,7 @@ router.get('/admin/batches/:batchId/download-all', async (req, res) => {
 // --- STUDENT ABSENCE REASON ---
 router.get('/student/pending-absences', authenticateStudent, async (req, res) => {
   try {
-    const absences = await prisma.attendance.findMany({
+    const absences = await db.attendance.findMany({
       where: { 
         userId: req.userId, 
         status: 'absent', 
@@ -858,7 +847,7 @@ router.get('/student/pending-absences', authenticateStudent, async (req, res) =>
 router.post('/student/submit-absence-reason', authenticateStudent, async (req, res) => {
   const { attendanceId, reason } = req.body;
   try {
-    await prisma.attendance.update({
+    await db.attendance.update({
       where: { id: attendanceId },
       data: {
         absenceReason: reason,
@@ -875,12 +864,12 @@ router.post('/student/submit-absence-reason', authenticateStudent, async (req, r
 // --- STUDENT ASSIGNMENTS ---
 router.get('/student/assignments', authenticateStudent, async (req, res) => {
   try {
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { userId: req.userId, enrollmentStatus: 'approved' }
     });
     const batchIds = enrollments.map(e => e.batchId);
     
-    const assignments = await prisma.assignment.findMany({
+    const assignments = await db.assignment.findMany({
       where: { batchId: { in: batchIds } },
       include: {
         submissions: {
@@ -911,10 +900,10 @@ router.post('/student/assignments/submit', authenticateStudent, upload.single('f
     fs.renameSync(req.file.path, finalPath);
     const fileUrl = `/uploads/assignments/${finalFilename}`;
 
-    const submission = await prisma.assignmentSubmission.upsert({
-      where: { assignmentId_userId: { assignmentId: parseInt(assignmentId), userId: req.userId } },
+    const submission = await db.assignmentSubmission.upsert({
+      where: { assignmentId_userId: { assignmentId: String(assignmentId), userId: req.userId } },
       update: { fileUrl, status: 'submitted', submittedAt: new Date() },
-      create: { assignmentId: parseInt(assignmentId), userId: req.userId, fileUrl, status: 'submitted' }
+      create: { assignmentId: String(assignmentId), userId: req.userId, fileUrl, status: 'submitted' }
     });
 
     return res.json({ success: true, submission });
@@ -927,12 +916,12 @@ router.post('/student/assignments/submit', authenticateStudent, upload.single('f
 // --- STUDENT EXAMS ---
 router.get('/student/exams', authenticateStudent, async (req, res) => {
   try {
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { userId: req.userId, enrollmentStatus: 'approved' }
     });
     const batchIds = enrollments.map(e => e.batchId);
     
-    const exams = await prisma.batchExam.findMany({
+    const exams = await db.batchExam.findMany({
       where: { batchId: { in: batchIds } },
       include: {
         questions: true,
@@ -953,8 +942,8 @@ router.get('/student/exams', authenticateStudent, async (req, res) => {
 router.post('/student/exams/submit', authenticateStudent, async (req, res) => {
   const { examId, answers } = req.body; // answers is { [questionId]: value }
   try {
-    const exam = await prisma.batchExam.findUnique({
-      where: { id: parseInt(examId) },
+    const exam = await db.batchExam.findUnique({
+      where: { id: String(examId) },
       include: { questions: true }
     });
     if (!exam) return res.status(404).json({ error: 'Exam not found' });
@@ -983,8 +972,8 @@ router.post('/student/exams/submit', authenticateStudent, async (req, res) => {
       }
     }
 
-    const submission = await prisma.examSubmission.upsert({
-      where: { examId_userId: { examId: parseInt(examId), userId: req.userId } },
+    const submission = await db.examSubmission.upsert({
+      where: { examId_userId: { examId: String(examId), userId: req.userId } },
       update: {
         totalScore,
         status: exam.questions.some(q => q.type === 'written') ? 'submitted' : 'graded',
@@ -992,7 +981,7 @@ router.post('/student/exams/submit', authenticateStudent, async (req, res) => {
         answers: { deleteMany: {}, create: answerRecords }
       },
       create: {
-        examId: parseInt(examId),
+        examId: String(examId),
         userId: req.userId,
         totalScore,
         status: exam.questions.some(q => q.type === 'written') ? 'submitted' : 'graded',

@@ -1,9 +1,8 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const db = require('../database');
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-clinidea-key';
 
 // Middleware for Admin
@@ -26,8 +25,8 @@ const authenticateAdmin = (req, res, next) => {
 
 router.get('/admin/events/:eventId/questions', authenticateAdmin, async (req, res) => {
   try {
-    const questions = await prisma.quizQuestion.findMany({
-      where: { eventId: parseInt(req.params.eventId) }
+    const questions = await db.quizQuestion.findMany({
+      where: { eventId: String(req.params.eventId) }
     });
     res.json(questions);
   } catch (err) {
@@ -38,9 +37,9 @@ router.get('/admin/events/:eventId/questions', authenticateAdmin, async (req, re
 router.post('/admin/events/:eventId/questions', authenticateAdmin, async (req, res) => {
   try {
     const { questionText, optionsJson, correctOption, marks } = req.body;
-    const question = await prisma.quizQuestion.create({
+    const question = await db.quizQuestion.create({
       data: {
-        eventId: parseInt(req.params.eventId),
+        eventId: String(req.params.eventId),
         questionText,
         optionsJson: JSON.stringify(optionsJson),
         correctOption,
@@ -56,7 +55,7 @@ router.post('/admin/events/:eventId/questions', authenticateAdmin, async (req, r
 
 router.delete('/admin/questions/:id', authenticateAdmin, async (req, res) => {
   try {
-    await prisma.quizQuestion.delete({ where: { id: parseInt(req.params.id) } });
+    await db.quizQuestion.delete({ where: { id: String(req.params.id) } });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete question' });
@@ -65,8 +64,8 @@ router.delete('/admin/questions/:id', authenticateAdmin, async (req, res) => {
 
 router.get('/admin/events/:eventId/attempts', authenticateAdmin, async (req, res) => {
   try {
-    const attempts = await prisma.quizAttempt.findMany({
-      where: { eventId: parseInt(req.params.eventId) },
+    const attempts = await db.quizAttempt.findMany({
+      where: { eventId: String(req.params.eventId) },
       orderBy: { startTime: 'desc' }
     });
     res.json(attempts);
@@ -81,10 +80,10 @@ router.get('/admin/events/:eventId/attempts', authenticateAdmin, async (req, res
 
 router.post('/public/events/:eventId/start-quiz', async (req, res) => {
   try {
-    const eventId = parseInt(req.params.eventId);
+    const eventId = String(req.params.eventId);
     const { name, email, phone, qualification, location, courseInterest } = req.body;
 
-    const event = await prisma.event.findUnique({
+    const event = await db.event.findUnique({
       where: { id: eventId },
       include: { questions: true }
     });
@@ -93,7 +92,7 @@ router.post('/public/events/:eventId/start-quiz', async (req, res) => {
       return res.status(404).json({ error: 'Quiz not found' });
     }
 
-    const existing = await prisma.quizAttempt.findFirst({
+    const existing = await db.quizAttempt.findFirst({
       where: {
         eventId,
         OR: [{ email }, { phone }]
@@ -107,7 +106,7 @@ router.post('/public/events/:eventId/start-quiz', async (req, res) => {
       return res.json({ attemptId: existing.id, status: existing.status });
     }
 
-    const attempt = await prisma.quizAttempt.create({
+    const attempt = await db.quizAttempt.create({
       data: {
         eventId,
         name,
@@ -130,13 +129,13 @@ router.post('/public/events/:eventId/start-quiz', async (req, res) => {
 
 router.get('/public/events/:eventId/quiz-session/:attemptId', async (req, res) => {
   try {
-    const eventId = parseInt(req.params.eventId);
-    const attemptId = parseInt(req.params.attemptId);
+    const eventId = String(req.params.eventId);
+    const attemptId = String(req.params.attemptId);
 
-    const attempt = await prisma.quizAttempt.findUnique({ where: { id: attemptId } });
+    const attempt = await db.quizAttempt.findUnique({ where: { id: attemptId } });
     if (!attempt || attempt.eventId !== eventId) return res.status(404).json({ error: 'Attempt not found' });
 
-    const event = await prisma.event.findUnique({
+    const event = await db.event.findUnique({
       where: { id: eventId },
       include: { questions: { select: { id: true, questionText: true, optionsJson: true, marks: true } } } 
     });
@@ -146,7 +145,7 @@ router.get('/public/events/:eventId/quiz-session/:attemptId', async (req, res) =
       const now = new Date();
       const diffMins = (now - pausedAt) / 1000 / 60;
       if (diffMins > 5) {
-        await prisma.quizAttempt.update({
+        await db.quizAttempt.update({
           where: { id: attemptId },
           data: { status: 'submitted', endTime: new Date(), score: 0 }
         });
@@ -168,8 +167,8 @@ router.get('/public/events/:eventId/quiz-session/:attemptId', async (req, res) =
 router.post('/public/events/:eventId/quiz-session/:attemptId/pause', async (req, res) => {
   try {
     const { responsesJson } = req.body;
-    await prisma.quizAttempt.update({
-      where: { id: parseInt(req.params.attemptId) },
+    await db.quizAttempt.update({
+      where: { id: String(req.params.attemptId) },
       data: {
         lastPausedAt: new Date(),
         ...(responsesJson && { responsesJson: JSON.stringify(responsesJson) })
@@ -183,11 +182,11 @@ router.post('/public/events/:eventId/quiz-session/:attemptId/pause', async (req,
 
 router.post('/public/events/:eventId/quiz-session/:attemptId/submit', async (req, res) => {
   try {
-    const eventId = parseInt(req.params.eventId);
-    const attemptId = parseInt(req.params.attemptId);
+    const eventId = String(req.params.eventId);
+    const attemptId = String(req.params.attemptId);
     const { responses } = req.body; // Object: { questionId: selectedOption }
 
-    const event = await prisma.event.findUnique({
+    const event = await db.event.findUnique({
       where: { id: eventId },
       include: { questions: true }
     });
@@ -203,7 +202,7 @@ router.post('/public/events/:eventId/quiz-session/:attemptId/submit', async (req
       }
     });
 
-    const attempt = await prisma.quizAttempt.update({
+    const attempt = await db.quizAttempt.update({
       where: { id: attemptId },
       data: {
         status: 'submitted',

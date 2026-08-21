@@ -1,9 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function check() {
   try {
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { userId: 15 },
       include: { batch: true }
     });
@@ -13,7 +12,7 @@ async function check() {
     console.log("Batch IDs:", batchIds);
 
     if (batchIds.length > 0) {
-      const contents = await prisma.lMSContent.findMany({
+      const contents = await db.lMSContent.findMany({
         where: { batchId: { in: batchIds } }
       });
       console.log("Contents for batches:", contents);
@@ -21,7 +20,7 @@ async function check() {
   } catch (err) {
     console.error(err);
   } finally {
-    prisma.$disconnect();
+    db.$disconnect();
   }
 }
 

@@ -3,7 +3,7 @@ const { Client } = require('ssh2');
 const conn = new Client();
 conn.on('ready', () => {
   console.log('Client :: ready');
-  conn.exec('cd /var/www/clinidea && git reset --hard && git clean -fd && git pull origin main && cd backend && npm install && npx prisma db push --accept-data-loss && pm2 restart clinidea-backend', (err, stream) => {
+  conn.exec('cd /var/www/clinidea && git reset --hard && git clean -fd && git pull origin main && cd backend && npm install && pm2 restart clinidea-backend', (err, stream) => {
     if (err) throw err;
     stream.on('close', (code, signal) => {
       console.log('Command complete with code: ' + code);

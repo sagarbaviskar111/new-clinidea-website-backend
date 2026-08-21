@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('../database');
 const bcrypt = require('bcryptjs');
+const { authenticateAdmin } = require('../middleware/auth');
+
+router.use(authenticateAdmin);
 
 // Middleware to ensure only superadmin can access these routes
 const ensureSuperAdmin = (req, res, next) => {
@@ -15,7 +17,7 @@ const ensureSuperAdmin = (req, res, next) => {
 // GET all admin users (excluding passwords)
 router.get('/', ensureSuperAdmin, async (req, res) => {
   try {
-    const admins = await prisma.admin.findMany({
+    const admins = await db.admin.findMany({
       select: {
         id: true,
         email: true,
@@ -32,28 +34,32 @@ router.get('/', ensureSuperAdmin, async (req, res) => {
 
 // POST to create a new admin user
 router.post('/', ensureSuperAdmin, async (req, res) => {
-  const { email, password, role } = req.body;
+  const { email, password, role, name, fullName } = req.body;
   if (!email || !password || !role) {
     return res.status(400).json({ error: 'Email, password, and role are required' });
   }
   
   try {
-    const existingAdmin = await prisma.admin.findUnique({ where: { email: email.toLowerCase() } });
+    const existingAdmin = await db.admin.findUnique({ where: { email: email.toLowerCase() } });
     if (existingAdmin) {
       return res.status(400).json({ error: 'Admin with this email already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newAdmin = await prisma.admin.create({
+    const newAdmin = await db.admin.create({
       data: {
         email: email.toLowerCase(),
         password: hashedPassword,
-        role: role
+        role: role,
+        name: name || fullName || email.split('@')[0],
+        fullName: name || fullName || email.split('@')[0]
       },
       select: {
         id: true,
         email: true,
-        role: true
+        role: true,
+        name: true,
+        fullName: true
       }
     });
 
@@ -69,13 +75,13 @@ router.delete('/:id', ensureSuperAdmin, async (req, res) => {
   const { id } = req.params;
   
   // Prevent deleting the currently logged-in superadmin
-  if (parseInt(id) === req.adminId) {
+  if (String(id) === req.adminId) {
     return res.status(400).json({ error: 'You cannot delete your own account' });
   }
 
   try {
-    await prisma.admin.delete({
-      where: { id: parseInt(id) }
+    await db.admin.delete({
+      where: { id: String(id) }
     });
     res.json({ message: 'Admin user deleted successfully' });
   } catch (error) {
@@ -95,8 +101,8 @@ router.put('/:id', ensureSuperAdmin, async (req, res) => {
     
     // Check if new email is already taken by another admin
     if (email) {
-      const existing = await prisma.admin.findUnique({ where: { email: email.toLowerCase() } });
-      if (existing && existing.id !== parseInt(id)) {
+      const existing = await db.admin.findUnique({ where: { email: email.toLowerCase() } });
+      if (existing && existing.id !== String(id)) {
         return res.status(400).json({ error: 'Email already in use by another account' });
       }
     }
@@ -105,8 +111,8 @@ router.put('/:id', ensureSuperAdmin, async (req, res) => {
       updateData.password = await bcrypt.hash(password, 10);
     }
 
-    const updatedAdmin = await prisma.admin.update({
-      where: { id: parseInt(id) },
+    const updatedAdmin = await db.admin.update({
+      where: { id: String(id) },
       data: updateData,
       select: {
         id: true,

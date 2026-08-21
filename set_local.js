@@ -1,8 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function update() {
-  const batches = await prisma.batch.findMany({
+  const batches = await db.batch.findMany({
     where: {
       batchName: {
         contains: 'August 2026'
@@ -12,7 +11,7 @@ async function update() {
 
   console.log('Found batches:', batches);
   for (let b of batches) {
-    await prisma.batch.update({
+    await db.batch.update({
       where: { id: b.id },
       data: { storageType: 'local' }
     });
@@ -20,4 +19,4 @@ async function update() {
   }
 }
 
-update().catch(console.error).finally(() => prisma.$disconnect());
+update().catch(console.error).finally(() => db.$disconnect());

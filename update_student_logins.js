@@ -1,7 +1,6 @@
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
-const prisma = new PrismaClient();
+const db = require('./database');
 
 const students = [
   { oldEmail: "shreyadaga31@gmail.com", loginId: "Shreya.Daga@clinidea.in", password: "Shreya@9461757898" },
@@ -17,10 +16,10 @@ const students = [
 
 async function main() {
   for (const s of students) {
-    const user = await prisma.user.findUnique({ where: { email: s.oldEmail } });
+    const user = await db.user.findUnique({ where: { email: s.oldEmail } });
     if (user) {
       const hashedPassword = await bcrypt.hash(s.password, 10);
-      await prisma.user.update({
+      await db.user.update({
         where: { email: s.oldEmail },
         data: {
           email: s.loginId,
@@ -34,4 +33,4 @@ async function main() {
   }
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect());
+main().catch(console.error).finally(() => db.$disconnect());

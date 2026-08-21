@@ -1,10 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function main() {
   try {
     // 1. Create a mock webinar event
-    const event = await prisma.event.create({
+    const event = await db.event.create({
       data: {
         title: 'Pharmacovigilance Advanced Masterclass',
         description: 'Learn the details of adverse drug reactions, case processing, and signal detection from global industry mentors.',
@@ -20,7 +19,7 @@ async function main() {
     console.log('Seeded event successfully:', event);
 
     // 2. Add 3 participants/registrations to the event
-    const p1 = await prisma.eventRegistration.create({
+    const p1 = await db.eventRegistration.create({
       data: {
         eventId: event.id,
         name: 'Aditya Sharma',
@@ -29,7 +28,7 @@ async function main() {
       }
     });
 
-    const p2 = await prisma.eventRegistration.create({
+    const p2 = await db.eventRegistration.create({
       data: {
         eventId: event.id,
         name: 'Pooja Patel',
@@ -38,7 +37,7 @@ async function main() {
       }
     });
 
-    const p3 = await prisma.eventRegistration.create({
+    const p3 = await db.eventRegistration.create({
       data: {
         eventId: event.id,
         name: 'Dr. Rajesh Kumar',
@@ -51,7 +50,7 @@ async function main() {
   } catch (error) {
     console.error('Error seeding events:', error);
   } finally {
-    await prisma.$disconnect();
+    await db.$disconnect();
   }
 }
 

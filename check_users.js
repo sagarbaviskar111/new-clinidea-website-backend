@@ -1,8 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function check() {
-  const users = await prisma.user.findMany({ where: { role: 'student' }});
+  const users = await db.user.findMany({ where: { role: 'student' }});
   console.log(users);
 }
-check().finally(() => prisma.$disconnect());
+check().finally(() => db.$disconnect());

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('../database');
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
 const { generateReceiptPDF } = require('../utils/pdf_generator');
@@ -16,12 +15,12 @@ const razorpayInstance = new Razorpay({
 router.get('/payments', async (req, res) => {
   try {
     const userId = req.userId;
-    const payments = await prisma.payment.findMany({
+    const payments = await db.payment.findMany({
       where: { userId },
       orderBy: { dueDate: 'asc' }
     });
 
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { userId }
     });
 
@@ -41,8 +40,8 @@ router.post('/pay-installment', async (req, res) => {
     const userId = req.userId;
     const { paymentId } = req.body; // The DB id of the pending installment
 
-    const payment = await prisma.payment.findUnique({
-      where: { id: parseInt(paymentId) },
+    const payment = await db.payment.findUnique({
+      where: { id: String(paymentId) },
       include: { user: true }
     });
 
@@ -93,10 +92,10 @@ router.post('/verify-installment', async (req, res) => {
     }
 
     // Process payment success
-    await prisma.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       // 1. Update Payment
       const updatedPayment = await tx.payment.update({
-        where: { id: parseInt(paymentId) },
+        where: { id: String(paymentId) },
         data: {
           paymentStatus: 'paid',
           transactionId: razorpay_payment_id,
@@ -110,7 +109,7 @@ router.post('/verify-installment', async (req, res) => {
       // 2. Generate Receipt ID if needed (random or sequential)
       const receiptNo = Math.floor(100000 + Math.random() * 900000);
       await tx.payment.update({
-        where: { id: parseInt(paymentId) },
+        where: { id: String(paymentId) },
         data: { receiptNumber: receiptNo }
       });
 
@@ -144,8 +143,8 @@ router.get('/payment-receipt/:paymentId', async (req, res) => {
   try {
     const { paymentId } = req.params;
     
-    const payment = await prisma.payment.findUnique({
-      where: { id: parseInt(paymentId) },
+    const payment = await db.payment.findUnique({
+      where: { id: String(paymentId) },
       include: { user: true }
     });
 

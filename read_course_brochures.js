@@ -1,8 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 async function main() {
-  const courses = await prisma.course.findMany();
+  const courses = await db.course.findMany();
   courses.forEach(c => {
     console.log(`${c.name}: brochureUrl=${c.brochureUrl}, pdf=${c.pdf}`);
   });
@@ -10,4 +9,4 @@ async function main() {
 
 main()
   .catch(e => console.error(e))
-  .finally(() => prisma.$disconnect());
+  .finally(() => db.$disconnect());

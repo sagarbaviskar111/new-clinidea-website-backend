@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('./database');
 
 const courses = [
   { name: 'Clinical Research & Pharmacovigilance', fees: 50000 },
@@ -12,9 +11,9 @@ const courses = [
 
 async function seed() {
   for (const c of courses) {
-    const existing = await prisma.course.findFirst({ where: { name: c.name } });
+    const existing = await db.course.findFirst({ where: { name: c.name } });
     if (!existing) {
-      await prisma.course.create({ data: { name: c.name, fees: c.fees } });
+      await db.course.create({ data: { name: c.name, fees: c.fees } });
       console.log(`Added course: ${c.name}`);
     } else {
       console.log(`Course already exists: ${c.name}`);
@@ -23,4 +22,4 @@ async function seed() {
   console.log("Seeding complete.");
 }
 
-seed().catch(console.error).finally(() => prisma.$disconnect());
+seed().catch(console.error).finally(() => db.$disconnect());

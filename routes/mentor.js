@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
+const db = require('../database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { uploadToYouTube, isYouTubeAvailable } = require('../utils/youtube');
+const { uploadToCloudinary, isCloudinaryConfigured } = require('../utils/cloudinary');
 
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-clinidea-key';
 
 // Middleware to authenticate Mentor
@@ -20,7 +21,7 @@ const authenticateMentor = (req, res, next) => {
     if (!decoded.role || (decoded.role !== 'mentor' && decoded.role !== 'superadmin')) {
       return res.status(403).json({ error: 'Access denied: Mentor only' });
     }
-    req.mentorId = decoded.adminId;
+    req.mentorId = decoded.adminId || decoded.id;
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid token' });
@@ -33,7 +34,7 @@ router.post('/mentor/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
   try {
-    const admin = await prisma.admin.findUnique({ where: { email } });
+    const admin = await db.admin.findUnique({ where: { email } });
     if (!admin || (admin.role !== 'mentor' && admin.role !== 'superadmin')) {
       return res.status(401).json({ error: 'Invalid mentor credentials' });
     }
@@ -54,15 +55,15 @@ router.get('/mentor/batches', authenticateMentor, async (req, res) => {
   try {
     let batches = [];
     if (req.mentorId) {
-      const admin = await prisma.admin.findUnique({ where: { id: req.mentorId } });
+      const admin = await db.admin.findUnique({ where: { id: req.mentorId } });
       if (admin && admin.role === 'superadmin') {
         // Superadmin gets all batches
-        batches = await prisma.batch.findMany({
+        batches = await db.batch.findMany({
           include: { course: true },
           orderBy: { createdAt: 'desc' }
         });
       } else {
-        const mappings = await prisma.batchMentor.findMany({
+        const mappings = await db.batchMentor.findMany({
           where: { mentorId: req.mentorId },
           include: { batch: { include: { course: true } } }
         });
@@ -81,11 +82,36 @@ router.get('/mentor/batches', authenticateMentor, async (req, res) => {
   }
 });
 
+// 2b. Schedule Live Session
+router.post('/mentor/sessions', authenticateMentor, async (req, res) => {
+  const { batchId, title, sessionDate, sessionTime, meetingLink } = req.body;
+  if (!batchId || !title || !sessionDate || !sessionTime) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  try {
+    const session = await db.classSession.create({
+      data: {
+        batchId: String(batchId),
+        title,
+        sessionDate: new Date(sessionDate),
+        sessionTime,
+        meetingLink: meetingLink || '',
+        status: 'upcoming',
+        mentorId: req.mentorId
+      }
+    });
+    return res.status(201).json({ success: true, session });
+  } catch (error) {
+    console.error('Error creating class session:', error);
+    return res.status(500).json({ error: 'Failed to schedule class session' });
+  }
+});
+
 // 3. Get Batch Sessions
 router.get('/mentor/sessions/:batchId', authenticateMentor, async (req, res) => {
   try {
-    const batchId = parseInt(req.params.batchId);
-    const sessions = await prisma.classSession.findMany({
+    const batchId = String(req.params.batchId);
+    const sessions = await db.classSession.findMany({
       where: { batchId },
       orderBy: { sessionDate: 'asc' }
     });
@@ -100,7 +126,7 @@ router.get('/mentor/sessions/:batchId', authenticateMentor, async (req, res) => 
 router.post('/mentor/sessions/cancel', authenticateMentor, async (req, res) => {
   const { sessionIds, reason } = req.body;
   try {
-    await prisma.classSession.updateMany({
+    await db.classSession.updateMany({
       where: { id: { in: sessionIds } },
       data: { isCancelled: true, cancellationReason: reason, status: 'cancelled' }
     });
@@ -114,16 +140,16 @@ router.post('/mentor/sessions/cancel', authenticateMentor, async (req, res) => {
 // 5. Get Attendance for a session
 router.get('/mentor/attendance/:sessionId', authenticateMentor, async (req, res) => {
   try {
-    const classSessionId = parseInt(req.params.sessionId);
-    const session = await prisma.classSession.findUnique({ where: { id: classSessionId } });
+    const classSessionId = String(req.params.sessionId);
+    const session = await db.classSession.findUnique({ where: { id: classSessionId } });
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const enrollments = await prisma.enrollment.findMany({
+    const enrollments = await db.enrollment.findMany({
       where: { batchId: session.batchId, enrollmentStatus: 'approved' },
       include: { user: true }
     });
 
-    const attendances = await prisma.attendance.findMany({
+    const attendances = await db.attendance.findMany({
       where: { classSessionId }
     });
     
@@ -154,7 +180,7 @@ router.post('/mentor/attendance', authenticateMentor, async (req, res) => {
   const { classSessionId, attendanceData } = req.body; // array of { userId, status }
   try {
     for (const record of attendanceData) {
-      await prisma.attendance.upsert({
+      await db.attendance.upsert({
         where: { userId_classSessionId: { userId: record.userId, classSessionId } },
         update: { status: record.status },
         create: { userId: record.userId, classSessionId, status: record.status }
@@ -171,9 +197,9 @@ router.post('/mentor/attendance', authenticateMentor, async (req, res) => {
 router.post('/mentor/assignments', authenticateMentor, async (req, res) => {
   const { batchId, title, description, totalMarks, dueDate } = req.body;
   try {
-    const assignment = await prisma.assignment.create({
+    const assignment = await db.assignment.create({
       data: {
-        batchId: parseInt(batchId),
+        batchId: String(batchId),
         mentorId: req.mentorId,
         title,
         description,
@@ -191,8 +217,8 @@ router.post('/mentor/assignments', authenticateMentor, async (req, res) => {
 // 8. Get Assignments
 router.get('/mentor/assignments/:batchId', authenticateMentor, async (req, res) => {
   try {
-    const assignments = await prisma.assignment.findMany({
-      where: { batchId: parseInt(req.params.batchId) },
+    const assignments = await db.assignment.findMany({
+      where: { batchId: String(req.params.batchId) },
       include: {
         submissions: {
           include: { user: true }
@@ -211,8 +237,8 @@ router.get('/mentor/assignments/:batchId', authenticateMentor, async (req, res) 
 router.put('/mentor/assignments/grade/:submissionId', authenticateMentor, async (req, res) => {
   const { marksObtained, mentorFeedback } = req.body;
   try {
-    const sub = await prisma.assignmentSubmission.update({
-      where: { id: parseInt(req.params.submissionId) },
+    const sub = await db.assignmentSubmission.update({
+      where: { id: String(req.params.submissionId) },
       data: {
         status: 'graded',
         marksObtained: parseInt(marksObtained),
@@ -231,9 +257,9 @@ router.put('/mentor/assignments/grade/:submissionId', authenticateMentor, async 
 router.post('/mentor/exams', authenticateMentor, async (req, res) => {
   const { batchId, title, totalMarks, startTime, endTime, questions } = req.body;
   try {
-    const exam = await prisma.batchExam.create({
+    const exam = await db.batchExam.create({
       data: {
-        batchId: parseInt(batchId),
+        batchId: String(batchId),
         mentorId: req.mentorId,
         title,
         totalMarks: parseInt(totalMarks),
@@ -260,8 +286,8 @@ router.post('/mentor/exams', authenticateMentor, async (req, res) => {
 // 11. Get Exams
 router.get('/mentor/exams/:batchId', authenticateMentor, async (req, res) => {
   try {
-    const exams = await prisma.batchExam.findMany({
-      where: { batchId: parseInt(req.params.batchId) },
+    const exams = await db.batchExam.findMany({
+      where: { batchId: String(req.params.batchId) },
       include: {
         questions: true,
         submissions: {
@@ -281,8 +307,8 @@ router.get('/mentor/exams/:batchId', authenticateMentor, async (req, res) => {
 router.put('/mentor/exams/grade/:answerId', authenticateMentor, async (req, res) => {
   const { marksObtained, mentorRemarks } = req.body;
   try {
-    const ans = await prisma.examAnswer.update({
-      where: { id: parseInt(req.params.answerId) },
+    const ans = await db.examAnswer.update({
+      where: { id: String(req.params.answerId) },
       data: {
         marksObtained: parseInt(marksObtained),
         mentorRemarks
@@ -290,11 +316,11 @@ router.put('/mentor/exams/grade/:answerId', authenticateMentor, async (req, res)
     });
     
     // Auto-update total score on submission
-    const allAnswers = await prisma.examAnswer.findMany({
+    const allAnswers = await db.examAnswer.findMany({
       where: { submissionId: ans.submissionId }
     });
     const total = allAnswers.reduce((sum, a) => sum + (a.marksObtained || 0), 0);
-    await prisma.examSubmission.update({
+    await db.examSubmission.update({
       where: { id: ans.submissionId },
       data: { totalScore: total, status: 'graded', gradedAt: new Date() }
     });
@@ -325,23 +351,44 @@ router.post('/mentor/lms-upload', authenticateMentor, upload.single('file'), asy
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
   try {
-    const fileUrl = `/uploads/lms_materials/${req.file.filename}`;
+    let fileUrl = `/uploads/lms_materials/${req.file.filename}`;
+    let driveWebViewLink = null;
     let contentType = 'other';
     const ext = path.extname(req.file.originalname).toLowerCase();
     if (ext === '.pdf') contentType = 'pdf';
     else if (['.ppt', '.pptx'].includes(ext)) contentType = 'ppt';
     else if (['.doc', '.docx'].includes(ext)) contentType = 'doc';
-    else if (['.mp4', '.mkv', '.avi', '.mov'].includes(ext)) contentType = 'video';
+    else if (['.mp4', '.mkv', '.avi', '.mov', '.webm'].includes(ext)) contentType = 'video';
     
-    const content = await prisma.lMSContent.create({
+    if (contentType === 'video') {
+      // Keep video local to avoid downloads/YouTube access
+      console.log(`Keeping video "${title}" local for secure HTML5 browser play...`);
+    } else if (isCloudinaryConfigured()) {
+      try {
+        console.log(`Uploading file "${title}" to Cloudinary...`);
+        const cloudResult = await uploadToCloudinary(req.file.path, 'lms_materials');
+        fileUrl = cloudResult.url;
+        driveWebViewLink = cloudResult.url;
+        
+        // Remove local file
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      } catch (cloudErr) {
+        console.error("Cloudinary upload failed, keeping local file:", cloudErr);
+      }
+    }
+    
+    const content = await db.lMSContent.create({
       data: {
-        batchId: parseInt(batchId),
+        batchId: String(batchId),
         title,
         description,
         contentType,
         category: category || 'Study Material',
         moduleName: moduleName || 'General',
         localFileUrl: fileUrl,
+        driveWebViewLink: driveWebViewLink
       }
     });
     

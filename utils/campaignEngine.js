@@ -1,9 +1,8 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
 const nodemailer = require('nodemailer');
 const path = require('path');
 
-const prisma = new PrismaClient();
+const db = require('../database');
 
 // Helper to replace placeholders like {{Name}}, {{Company}}
 const parseEmailBody = (body, contact) => {
@@ -19,7 +18,7 @@ cron.schedule('* * * * *', async () => {
   
   try {
     // 1. Find all running campaigns
-    const runningCampaigns = await prisma.hRCampaign.findMany({
+    const runningCampaigns = await db.hRCampaign.findMany({
       where: { status: 'running' },
       include: {
         emailAccount: true, // the explicitly assigned account, if any
@@ -30,7 +29,7 @@ cron.schedule('* * * * *', async () => {
 
     for (const campaign of runningCampaigns) {
       // 2. Fetch pending recipients up to the rate limit
-      const pendingRecipients = await prisma.hRCampaignRecipient.findMany({
+      const pendingRecipients = await db.hRCampaignRecipient.findMany({
         where: {
           campaignId: campaign.id,
           status: 'pending'
@@ -43,7 +42,7 @@ cron.schedule('* * * * *', async () => {
 
       if (pendingRecipients.length === 0) {
         // If no more pending recipients, mark campaign as completed
-        await prisma.hRCampaign.update({
+        await db.hRCampaign.update({
           where: { id: campaign.id },
           data: { status: 'completed' }
         });
@@ -56,10 +55,10 @@ cron.schedule('* * * * *', async () => {
       // If no explicit account, implement auto-rotation
       if (!accountToUse) {
         // For simplicity: Find first active account that hasn't hit its daily limit
-        accountToUse = await prisma.emailAccount.findFirst({
+        accountToUse = await db.emailAccount.findFirst({
           where: {
             isActive: true,
-            sentToday: { lt: prisma.emailAccount.fields.dailyLimit }
+            sentToday: { lt: db.emailAccount.fields.dailyLimit }
           },
           orderBy: { lastUsedAt: 'asc' } // basic round-robin
         });
@@ -67,7 +66,7 @@ cron.schedule('* * * * *', async () => {
 
       if (!accountToUse) {
         console.warn(`Campaign ${campaign.id}: No active email accounts available with remaining daily limits. Pausing campaign.`);
-        await prisma.hRCampaign.update({
+        await db.hRCampaign.update({
           where: { id: campaign.id },
           data: { status: 'paused' }
         });
@@ -106,7 +105,7 @@ cron.schedule('* * * * *', async () => {
         };
 
         // Fetch all attachments for this campaign ONCE (if not already fetched, but let's just do it directly or fetch it before loop)
-        const campaignAttachments = await prisma.hRCVAttachment.findMany({
+        const campaignAttachments = await db.hRCVAttachment.findMany({
           where: { campaignId: campaign.id }
         });
 
@@ -121,7 +120,7 @@ cron.schedule('* * * * *', async () => {
         try {
           await transporter.sendMail(mailOptions);
           
-          await prisma.hRCampaignRecipient.update({
+          await db.hRCampaignRecipient.update({
             where: { id: recipient.id },
             data: {
               status: 'sent',
@@ -132,7 +131,7 @@ cron.schedule('* * * * *', async () => {
           sentInThisBatch++;
         } catch (err) {
           console.error(`Failed to send email to ${recipient.hrContact.email}:`, err);
-          await prisma.hRCampaignRecipient.update({
+          await db.hRCampaignRecipient.update({
             where: { id: recipient.id },
             data: {
               status: 'failed',
@@ -145,7 +144,7 @@ cron.schedule('* * * * *', async () => {
 
       // 6. Update counts
       if (sentInThisBatch > 0 || failedInThisBatch > 0) {
-        await prisma.hRCampaign.update({
+        await db.hRCampaign.update({
           where: { id: campaign.id },
           data: {
             sentCount: { increment: sentInThisBatch },
@@ -153,7 +152,7 @@ cron.schedule('* * * * *', async () => {
           }
         });
 
-        await prisma.emailAccount.update({
+        await db.emailAccount.update({
           where: { id: accountToUse.id },
           data: {
             sentToday: { increment: sentInThisBatch },
@@ -174,7 +173,7 @@ console.log("HR Campaign Background Engine Initialized");
 // Setup midnight cron to reset `sentToday` limits for email accounts
 cron.schedule('0 0 * * *', async () => {
   try {
-    await prisma.emailAccount.updateMany({
+    await db.emailAccount.updateMany({
       data: { sentToday: 0 }
     });
     console.log("Reset daily limits for all email accounts");

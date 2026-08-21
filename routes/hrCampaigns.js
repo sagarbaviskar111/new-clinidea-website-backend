@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const db = require('../database');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -30,7 +29,7 @@ const upload = multer({ storage: storage, limits: { fileSize: 5 * 1024 * 1024 } 
 
 router.get('/email-accounts', async (req, res) => {
   try {
-    const accounts = await prisma.emailAccount.findMany({
+    const accounts = await db.emailAccount.findMany({
       orderBy: { createdAt: 'desc' }
     });
     // Strip passwords before sending to frontend
@@ -47,7 +46,7 @@ router.get('/email-accounts', async (req, res) => {
 router.post('/email-accounts', async (req, res) => {
   try {
     const { email, password, smtpHost, smtpPort, dailyLimit } = req.body;
-    const account = await prisma.emailAccount.create({
+    const account = await db.emailAccount.create({
       data: {
         email,
         password,
@@ -73,8 +72,8 @@ router.put('/email-accounts/:id', async (req, res) => {
     if (password) updateData.password = password;
     if (dailyLimit !== undefined) updateData.dailyLimit = parseInt(dailyLimit);
 
-    const account = await prisma.emailAccount.update({
-      where: { id: parseInt(id) },
+    const account = await db.emailAccount.update({
+      where: { id: String(id) },
       data: updateData
     });
     const { password: pwd, ...safeAcc } = account;
@@ -87,7 +86,7 @@ router.put('/email-accounts/:id', async (req, res) => {
 router.delete('/email-accounts/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.emailAccount.delete({ where: { id: parseInt(id) } });
+    await db.emailAccount.delete({ where: { id: String(id) } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete email account' });
@@ -100,7 +99,7 @@ router.delete('/email-accounts/:id', async (req, res) => {
 
 router.get('/hr-contacts', async (req, res) => {
   try {
-    const contacts = await prisma.hRContact.findMany({
+    const contacts = await db.hRContact.findMany({
       orderBy: { createdAt: 'desc' }
     });
     res.json(contacts);
@@ -114,7 +113,7 @@ router.post('/hr-contacts', async (req, res) => {
     const { email, name, company, tags, notes } = req.body;
     
     // Upsert to handle existing emails
-    const contact = await prisma.hRContact.upsert({
+    const contact = await db.hRContact.upsert({
       where: { email },
       update: { name, company, tags, notes },
       create: { email, name, company, tags, notes }
@@ -128,7 +127,7 @@ router.post('/hr-contacts', async (req, res) => {
 router.delete('/hr-contacts/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.hRContact.delete({ where: { id: parseInt(id) } });
+    await db.hRContact.delete({ where: { id: String(id) } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete HR contact' });
@@ -141,7 +140,7 @@ router.delete('/hr-contacts/:id', async (req, res) => {
 
 router.get('/hr-campaigns', async (req, res) => {
   try {
-    const campaigns = await prisma.hRCampaign.findMany({
+    const campaigns = await db.hRCampaign.findMany({
       include: {
         emailAccount: { select: { email: true } },
         _count: { select: { recipients: true, attachments: true } }
@@ -156,8 +155,8 @@ router.get('/hr-campaigns', async (req, res) => {
 
 router.get('/hr-campaigns/:id', async (req, res) => {
   try {
-    const campaign = await prisma.hRCampaign.findUnique({
-      where: { id: parseInt(req.params.id) },
+    const campaign = await db.hRCampaign.findUnique({
+      where: { id: String(req.params.id) },
       include: {
         emailAccount: { select: { email: true } },
         recipients: {
@@ -176,12 +175,12 @@ router.get('/hr-campaigns/:id', async (req, res) => {
 router.post('/hr-campaigns', async (req, res) => {
   try {
     const { name, subject, body, emailAccountId, rateLimitLimit } = req.body;
-    const campaign = await prisma.hRCampaign.create({
+    const campaign = await db.hRCampaign.create({
       data: {
         name,
         subject,
         body,
-        emailAccountId: emailAccountId ? parseInt(emailAccountId) : null,
+        emailAccountId: emailAccountId ? String(emailAccountId) : null,
         rateLimitLimit: rateLimitLimit ? parseInt(rateLimitLimit) : 50
       }
     });
@@ -194,13 +193,13 @@ router.post('/hr-campaigns', async (req, res) => {
 router.put('/hr-campaigns/:id', async (req, res) => {
   try {
     const { name, subject, body, emailAccountId, rateLimitLimit } = req.body;
-    const campaign = await prisma.hRCampaign.update({
-      where: { id: parseInt(req.params.id) },
+    const campaign = await db.hRCampaign.update({
+      where: { id: String(req.params.id) },
       data: {
         name,
         subject,
         body,
-        emailAccountId: emailAccountId ? parseInt(emailAccountId) : null,
+        emailAccountId: emailAccountId ? String(emailAccountId) : null,
         rateLimitLimit: rateLimitLimit ? parseInt(rateLimitLimit) : 50
       }
     });
@@ -212,7 +211,7 @@ router.put('/hr-campaigns/:id', async (req, res) => {
 
 router.delete('/hr-campaigns/:id', async (req, res) => {
   try {
-    await prisma.hRCampaign.delete({ where: { id: parseInt(req.params.id) } });
+    await db.hRCampaign.delete({ where: { id: String(req.params.id) } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete campaign' });
@@ -221,8 +220,8 @@ router.delete('/hr-campaigns/:id', async (req, res) => {
 
 router.post('/hr-campaigns/:id/start', async (req, res) => {
   try {
-    const campaign = await prisma.hRCampaign.update({
-      where: { id: parseInt(req.params.id) },
+    const campaign = await db.hRCampaign.update({
+      where: { id: String(req.params.id) },
       data: { status: 'running' }
     });
     res.json(campaign);
@@ -233,8 +232,8 @@ router.post('/hr-campaigns/:id/start', async (req, res) => {
 
 router.post('/hr-campaigns/:id/pause', async (req, res) => {
   try {
-    const campaign = await prisma.hRCampaign.update({
-      where: { id: parseInt(req.params.id) },
+    const campaign = await db.hRCampaign.update({
+      where: { id: String(req.params.id) },
       data: { status: 'paused' }
     });
     res.json(campaign);
@@ -249,7 +248,7 @@ router.post('/hr-campaigns/:id/pause', async (req, res) => {
 
 router.post('/hr-campaigns/:id/upload-cvs', upload.array('cvs', 100), async (req, res) => {
   try {
-    const campaignId = parseInt(req.params.id);
+    const campaignId = String(req.params.id);
     const files = req.files;
     
     if (!files || files.length === 0) {
@@ -261,7 +260,7 @@ router.post('/hr-campaigns/:id/upload-cvs', upload.array('cvs', 100), async (req
       // Use original filename (without extension) as mapping ID by default, or just the filename
       const mappingId = path.parse(file.originalname).name;
       
-      const attachment = await prisma.hRCVAttachment.create({
+      const attachment = await db.hRCVAttachment.create({
         data: {
           campaignId,
           mappingId: mappingId,
@@ -281,7 +280,7 @@ router.post('/hr-campaigns/:id/upload-cvs', upload.array('cvs', 100), async (req
 
 router.post('/hr-campaigns/:id/recipients', async (req, res) => {
   try {
-    const campaignId = parseInt(req.params.id);
+    const campaignId = String(req.params.id);
     const { recipients } = req.body; // Array of { email, name, company, tags, cvMappingId }
 
     if (!Array.isArray(recipients) || recipients.length === 0) {
@@ -293,7 +292,7 @@ router.post('/hr-campaigns/:id/recipients', async (req, res) => {
       if (!rec.email) continue;
 
       // Ensure HR contact exists
-      const contact = await prisma.hRContact.upsert({
+      const contact = await db.hRContact.upsert({
         where: { email: rec.email },
         update: { 
           name: rec.name || undefined,
@@ -309,7 +308,7 @@ router.post('/hr-campaigns/:id/recipients', async (req, res) => {
       });
 
       // Add to campaign
-      await prisma.hRCampaignRecipient.upsert({
+      await db.hRCampaignRecipient.upsert({
         where: {
           campaignId_hrContactId: {
             campaignId: campaignId,
@@ -328,8 +327,8 @@ router.post('/hr-campaigns/:id/recipients', async (req, res) => {
     }
 
     // Update total count
-    const totalRecipients = await prisma.hRCampaignRecipient.count({ where: { campaignId } });
-    await prisma.hRCampaign.update({
+    const totalRecipients = await db.hRCampaignRecipient.count({ where: { campaignId } });
+    await db.hRCampaign.update({
       where: { id: campaignId },
       data: { totalRecipients }
     });
