@@ -2,7 +2,10 @@ const path = require('path');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+const dbEnvPath = require('fs').existsSync(path.resolve(__dirname, '../.env'))
+  ? path.resolve(__dirname, '../.env')
+  : path.resolve(__dirname, '../../.env');
+dotenv.config({ path: dbEnvPath });
 
 const { Schema } = mongoose;
 const modelCache = new Map();
