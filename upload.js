@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Client } = require('ssh2');
 const fs = require('fs');
 const conn = new Client();
@@ -25,7 +26,7 @@ conn.on('ready', () => {
     readStream.pipe(writeStream);
   });
 }).connect({
-  host: '185.199.53.21',
-  username: 'root',
-  password: 'Swami@28031999'
+  host: process.env.VPS_HOST,
+  username: process.env.VPS_USER || 'root',
+  password: process.env.VPS_PASSWORD
 });
