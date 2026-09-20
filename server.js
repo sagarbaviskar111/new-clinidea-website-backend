@@ -39,8 +39,17 @@ app.use(helmet({
 app.use(compression());
 
 // CORS
+const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', process.env.FRONTEND_URL].filter(Boolean);
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', process.env.FRONTEND_URL].filter(Boolean),
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any localhost/127.0.0.1 port in development (Vite auto-shifts ports when busy)
+    if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
@@ -132,6 +141,32 @@ app.get('/api/review-videos', async (req, res) => {
   } catch (error) {
     console.error('Review videos fetch error:', error.message);
     res.json([]);
+  }
+});
+
+app.get('/api/blogs', async (req, res) => {
+  try {
+    const blogs = await db.blog.findMany({
+      where: { isPublished: { in: [true, 1] } },
+      orderBy: { createdAt: 'desc' }
+    }).catch(() => []);
+    res.json(blogs);
+  } catch (error) {
+    console.error('Blogs fetch error:', error.message);
+    res.json([]);
+  }
+});
+
+app.get('/api/blogs/:slug', async (req, res) => {
+  try {
+    const blog = await db.blog.findFirst({
+      where: { slug: req.params.slug, isPublished: { in: [true, 1] } }
+    }).catch(() => null);
+    if (!blog) return res.status(404).json({ error: 'Blog not found' });
+    res.json(blog);
+  } catch (error) {
+    console.error('Blog fetch error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch blog' });
   }
 });
 
@@ -246,6 +281,123 @@ app.get('/api/certificate/verify/:certificate_id', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to verify certificate' });
+  }
+});
+
+// Student Admission Form (multi-step, saved progressively per step)
+app.post('/api/admission', async (req, res) => {
+  try {
+    const {
+      fullName, dateOfBirth, mobileNumber, email, gender, alternateNumber,
+      address, city, state, country, pincode, qualification, institution,
+      yearOfPassing, govtIdNumber, panNumber, course
+    } = req.body;
+
+    if (!fullName || !dateOfBirth || !mobileNumber || !email || !gender) {
+      return res.status(400).json({ error: 'Please fill all required applicant details.' });
+    }
+
+    const admission = await db.admission.create({
+      data: {
+        fullName, dateOfBirth, mobileNumber, email, gender, alternateNumber,
+        address, city, state, country, pincode, qualification, institution,
+        yearOfPassing, govtIdNumber, panNumber, course,
+        currentStep: 1,
+        status: 'in_progress'
+      }
+    });
+
+    res.status(201).json({ success: true, admission });
+  } catch (error) {
+    console.error('Admission create error:', error.message);
+    res.status(500).json({ error: 'Failed to save applicant details.' });
+  }
+});
+
+app.put('/api/admission/:id', async (req, res) => {
+  try {
+    const admission = await db.admission.update({
+      where: { id: req.params.id },
+      data: req.body
+    });
+    res.json({ success: true, admission });
+  } catch (error) {
+    console.error('Admission update error:', error.message);
+    res.status(500).json({ error: 'Failed to update admission application.' });
+  }
+});
+
+app.get('/api/admission/:id', async (req, res) => {
+  try {
+    const admission = await db.admission.findUnique({ where: { id: req.params.id } });
+    if (!admission) return res.status(404).json({ error: 'Admission application not found' });
+    res.json(admission);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch admission application.' });
+  }
+});
+
+// Save terms agreement + facial/signature verification, generate the signed Application
+// Form PDF from the applicant's own saved data, and return it for download.
+app.post('/api/admission/:id/generate-form', async (req, res) => {
+  try {
+    const { termsReadConfirmed, termsAgreed, facialPhotoUrl, signatureUrl } = req.body;
+    if (!termsReadConfirmed || !termsAgreed) {
+      return res.status(400).json({ error: 'Please confirm you have read and agree to the terms and conditions.' });
+    }
+    if (!facialPhotoUrl || !signatureUrl) {
+      return res.status(400).json({ error: 'Live facial verification and digital signature are both required.' });
+    }
+
+    const admission = await db.admission.update({
+      where: { id: req.params.id },
+      data: { termsReadConfirmed, termsAgreed, facialPhotoUrl, signatureUrl, applicationSubmittedAt: new Date() }
+    });
+
+    const { generateApplicationFormPDF } = require('./utils/pdf_generator');
+    const pdfUrl = await generateApplicationFormPDF(admission);
+
+    await db.admission.update({ where: { id: req.params.id }, data: { applicationFormPdfUrl: pdfUrl } });
+
+    res.json({ success: true, pdfUrl });
+  } catch (error) {
+    console.error('Application form generation error:', error.message);
+    res.status(500).json({ error: 'Failed to generate the application form.' });
+  }
+});
+
+// Admission document upload (photo / ID proof / PAN / certificates) -> Cloudinary
+const multer = require('multer');
+const docUpload = multer({ dest: path.join(uploadDir, 'tmp'), limits: { fileSize: 15 * 1024 * 1024 } });
+app.post('/api/admission/upload-document', docUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    const { uploadToCloudinary } = require('./utils/cloudinary');
+    const result = await uploadToCloudinary(req.file.path, 'admission_documents');
+    fs.unlink(req.file.path, () => {});
+    res.json({ success: true, url: result.url });
+  } catch (error) {
+    fs.unlink(req.file.path, () => {});
+    console.error('Document upload error:', error.message);
+    res.status(500).json({ error: 'Failed to upload document' });
+  }
+});
+
+// Public coupon validation (used during registration payment, before login)
+app.post('/api/coupons/validate', async (req, res) => {
+  try {
+    const code = String(req.body.code || '').trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: 'Coupon code is required' });
+
+    const coupon = await db.coupon.findFirst({ where: { code } });
+    if (!coupon || coupon.isActive === false) return res.status(400).json({ error: 'Invalid or inactive coupon' });
+    if (coupon.maxUses && (coupon.usedCount || 0) >= coupon.maxUses) return res.status(400).json({ error: 'Coupon usage limit reached' });
+    if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) return res.status(400).json({ error: 'Coupon has expired' });
+
+    res.json({ valid: true, code: coupon.code, discountPercent: coupon.discountPercent });
+  } catch (error) {
+    console.error('Coupon validation error:', error.message);
+    res.status(500).json({ error: 'Failed to validate coupon' });
   }
 });
 

@@ -375,9 +375,56 @@ async function generateCertificatePDF(certData) {
   return `/uploads/certificates/${fileName}`;
 }
 
-module.exports = { 
-  generateReceiptPDF, 
-  generateRegistrationReceiptPDF, 
+async function generateApplicationFormPDF(admission) {
+  const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+
+  const templatePath = path.join(__dirname, '..', 'templates', 'application_form.html');
+  let htmlContent = fs.readFileSync(templatePath, 'utf8');
+
+  const imgTag = (url, alt) => url ? `<img src="${url}" alt="${alt}" />` : `<span style="color:#999;font-size:12px;">Not provided</span>`;
+
+  htmlContent = htmlContent
+    .replace(/{{fullName}}/g, admission.fullName || 'N/A')
+    .replace(/{{dateOfBirth}}/g, admission.dateOfBirth || 'N/A')
+    .replace(/{{gender}}/g, admission.gender || 'N/A')
+    .replace(/{{mobileNumber}}/g, admission.mobileNumber || 'N/A')
+    .replace(/{{alternateNumber}}/g, admission.alternateNumber || 'N/A')
+    .replace(/{{email}}/g, admission.email || 'N/A')
+    .replace(/{{address}}/g, admission.address || 'N/A')
+    .replace(/{{city}}/g, admission.city || 'N/A')
+    .replace(/{{state}}/g, admission.state || 'N/A')
+    .replace(/{{country}}/g, admission.country || 'N/A')
+    .replace(/{{pincode}}/g, admission.pincode || 'N/A')
+    .replace(/{{qualification}}/g, admission.qualification || 'N/A')
+    .replace(/{{institution}}/g, admission.institution || 'N/A')
+    .replace(/{{yearOfPassing}}/g, admission.yearOfPassing || 'N/A')
+    .replace(/{{govtIdNumber}}/g, admission.govtIdNumber || 'N/A')
+    .replace(/{{panNumber}}/g, admission.panNumber || 'N/A')
+    .replace(/{{course}}/g, admission.course || 'N/A')
+    .replace(/{{submittedDate}}/g, new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }))
+    .replace('{{photoImg}}', imgTag(admission.documents?.photo, 'Photo'))
+    .replace('{{facialImg}}', imgTag(admission.facialPhotoUrl, 'Live Facial Verification'))
+    .replace('{{signatureImg}}', imgTag(admission.signatureUrl, 'Digital Signature'));
+
+  await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+
+  const dir = path.join(__dirname, '..', 'uploads', 'application_forms');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const fileName = `application_${admission.id}_${Date.now()}.pdf`;
+  const filePath = path.join(dir, fileName);
+
+  await page.pdf({ path: filePath, format: 'A4', printBackground: true });
+  await browser.close();
+
+  return `/uploads/application_forms/${fileName}`;
+}
+
+module.exports = {
+  generateReceiptPDF,
+  generateRegistrationReceiptPDF,
   generateEnrollmentReceiptPDF,
-  generateCertificatePDF
+  generateCertificatePDF,
+  generateApplicationFormPDF
 };

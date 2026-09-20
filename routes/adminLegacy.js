@@ -259,7 +259,7 @@ router.get('/courses', async (req, res) => {
 
 router.post('/courses', async (req, res) => {
   try {
-    const { name, description, duration, fees, syllabus, brochureUrl } = req.body;
+    const { name, description, duration, fees, syllabus, brochureUrl, applicationFormUrl, deliveryMode, batchStartDate, paymentPlan } = req.body;
     const course = await db.course.create({
       data: {
         name,
@@ -268,6 +268,10 @@ router.post('/courses', async (req, res) => {
         fees: fees ? parseFloat(fees) : null,
         syllabus,
         brochureUrl,
+        applicationFormUrl,
+        deliveryMode,
+        batchStartDate,
+        paymentPlan,
         slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
       }
     });
@@ -301,6 +305,67 @@ router.delete('/courses/:id', async (req, res) => {
   }
 });
 
+// --------------------------------------------------------
+// COUPONS
+// --------------------------------------------------------
+router.get('/coupons', async (req, res) => {
+  try {
+    const coupons = await db.coupon.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(coupons);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch coupons' });
+  }
+});
+
+router.post('/coupons', async (req, res) => {
+  try {
+    const { code, discountPercent, maxUses, expiryDate, isActive } = req.body;
+    if (!code || !discountPercent) return res.status(400).json({ error: 'Code and discount percentage are required' });
+
+    const normalizedCode = String(code).trim().toUpperCase();
+    const existing = await db.coupon.findFirst({ where: { code: normalizedCode } });
+    if (existing) return res.status(409).json({ error: 'A coupon with this code already exists' });
+
+    const coupon = await db.coupon.create({
+      data: {
+        code: normalizedCode,
+        discountPercent: parseFloat(discountPercent),
+        maxUses: maxUses ? parseInt(maxUses, 10) : null,
+        usedCount: 0,
+        expiryDate: expiryDate ? new Date(expiryDate) : null,
+        isActive: isActive !== undefined ? isActive : true
+      }
+    });
+    res.status(201).json(coupon);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create coupon' });
+  }
+});
+
+router.put('/coupons/:id', async (req, res) => {
+  try {
+    const data = { ...req.body };
+    if (data.discountPercent !== undefined) data.discountPercent = parseFloat(data.discountPercent);
+    if (data.maxUses !== undefined) data.maxUses = data.maxUses ? parseInt(data.maxUses, 10) : null;
+    if (data.expiryDate !== undefined) data.expiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
+    if (data.code) data.code = String(data.code).trim().toUpperCase();
+    delete data.id;
+    const coupon = await db.coupon.update({ where: { id: req.params.id }, data });
+    res.json(coupon);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update coupon' });
+  }
+});
+
+router.delete('/coupons/:id', async (req, res) => {
+  try {
+    await db.coupon.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete coupon' });
+  }
+});
+
 router.post('/upload-brochure', uploadMiddleware, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No brochure file uploaded' });
@@ -310,12 +375,15 @@ router.post('/upload-brochure', uploadMiddleware, async (req, res) => {
   }
 });
 
-router.post('/courses/:id/media', uploadMiddleware, async (req, res) => {
+router.patch('/courses/:id/media', async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    res.json({ success: true, url: `/uploads/${req.file.filename}` });
+    const data = {};
+    if (req.body.youtubeUrl !== undefined) data.youtubeUrl = req.body.youtubeUrl;
+    if (req.body.brochureUrl) data.brochureUrl = req.body.brochureUrl;
+    const course = await db.course.update({ where: { id: req.params.id }, data });
+    res.json({ success: true, course });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to upload media' });
+    res.status(500).json({ error: 'Failed to update course media' });
   }
 });
 
@@ -570,9 +638,26 @@ router.get('/blogs', async (req, res) => {
   }
 });
 
+function slugify(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+}
+
+async function uniqueSlug(base, excludeId) {
+  let slug = base;
+  let suffix = 1;
+  while (true) {
+    const existing = await db.blog.findFirst({ where: { slug } });
+    if (!existing || existing.id === excludeId) return slug;
+    suffix += 1;
+    slug = `${base}-${suffix}`;
+  }
+}
+
 router.post('/blogs', async (req, res) => {
   try {
-    const blog = await db.blog.create({ data: req.body });
+    const base = slugify(req.body.slug || req.body.title);
+    const slug = await uniqueSlug(base);
+    const blog = await db.blog.create({ data: { ...req.body, slug } });
     res.status(201).json(blog);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create blog' });
@@ -581,9 +666,14 @@ router.post('/blogs', async (req, res) => {
 
 router.put('/blogs/:id', async (req, res) => {
   try {
+    const data = { ...req.body };
+    if (data.slug || data.title) {
+      const base = slugify(data.slug || data.title);
+      data.slug = await uniqueSlug(base, req.params.id);
+    }
     const blog = await db.blog.update({
       where: { id: req.params.id },
-      data: req.body
+      data
     });
     res.json(blog);
   } catch (error) {

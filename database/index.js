@@ -17,7 +17,7 @@ const collections = {
   attendance: 'attendance', notification: 'notifications', certificate: 'certificates',
   event: 'events', quizQuestion: 'quiz_questions', quizAttempt: 'quiz_attempts',
   eventRegistration: 'event_registrations', pageContent: 'page_contents',
-  blogCategory: 'blog_categories', blog: 'blogs', testimonial: 'testimonials',
+  blogCategory: 'blog_categories', blog: 'blogs', testimonial: 'testimonials', admission: 'admissions',
   placement: 'placements', coupon: 'coupons', referral: 'referrals', payment: 'payments',
   adminAuditLog: 'admin_audit_logs', paymentSetting: 'payment_settings', expense: 'expenses',
   additionalIncome: 'additional_incomes', emailAccount: 'email_accounts', hrContact: 'hr_contacts',

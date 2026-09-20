@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Student Admission Application Form</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      padding: 40px;
+      color: #333;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 25px;
+      border-bottom: 2px solid #0D9488;
+      padding-bottom: 20px;
+    }
+    .header h1 {
+      margin: 0;
+      color: #0D9488;
+      font-size: 26px;
+    }
+    .header p {
+      margin: 5px 0 0;
+      color: #666;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 13px;
+    }
+    th {
+      background-color: #f8fafc;
+      font-weight: 600;
+      color: #333;
+    }
+    .section-title {
+      background-color: #0D9488 !important;
+      color: white !important;
+      font-weight: bold;
+      text-align: center;
+      font-size: 15px;
+    }
+    .photo-box {
+      width: 100px;
+      height: 120px;
+      border: 1px solid #ccc;
+      float: right;
+      margin: -60px 0 10px 10px;
+      background: #f8fafc;
+      text-align: center;
+      overflow: hidden;
+    }
+    .photo-box img { width: 100%; height: 100%; object-fit: cover; }
+    .sign-row { display: flex; justify-content: space-between; margin-top: 30px; gap: 20px; }
+    .sign-box { width: 48%; border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
+    .sign-box img { max-width: 100%; max-height: 90px; }
+    .sign-label { font-weight: bold; color: #0D9488; margin-bottom: 8px; font-size: 13px; }
+    .agreement { margin-top: 20px; font-size: 12px; color: #444; border: 1px solid #ddd; padding: 12px; border-radius: 6px; background: #f0fdfa; }
+    .footer { text-align: center; margin-top: 30px; font-size: 11px; color: #888; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Clinidea Education</h1>
+    <p>Student Admission &mdash; Application Form</p>
+  </div>
+
+  <div class="photo-box">
+    {{photoImg}}
+  </div>
+
+  <table>
+    <tr><td colspan="2" class="section-title">A. Applicant Details</td></tr>
+    <tr><td width="35%"><strong>Full Name</strong></td><td>{{fullName}}</td></tr>
+    <tr><td><strong>Date of Birth</strong></td><td>{{dateOfBirth}}</td></tr>
+    <tr><td><strong>Gender</strong></td><td>{{gender}}</td></tr>
+    <tr><td><strong>Mobile Number</strong></td><td>{{mobileNumber}}</td></tr>
+    <tr><td><strong>Alternate / WhatsApp Number</strong></td><td>{{alternateNumber}}</td></tr>
+    <tr><td><strong>E-mail ID</strong></td><td>{{email}}</td></tr>
+    <tr><td><strong>Residential Address</strong></td><td>{{address}}</td></tr>
+    <tr><td><strong>City / State / Country</strong></td><td>{{city}}, {{state}}, {{country}}</td></tr>
+    <tr><td><strong>PIN / ZIP Code</strong></td><td>{{pincode}}</td></tr>
+    <tr><td><strong>Highest Qualification</strong></td><td>{{qualification}}</td></tr>
+    <tr><td><strong>Institution</strong></td><td>{{institution}}</td></tr>
+    <tr><td><strong>Year of Passing</strong></td><td>{{yearOfPassing}}</td></tr>
+    <tr><td><strong>Aadhaar / Government ID Number</strong></td><td>{{govtIdNumber}}</td></tr>
+    <tr><td><strong>PAN Number</strong></td><td>{{panNumber}}</td></tr>
+    <tr><td><strong>Course Applied For</strong></td><td>{{course}}</td></tr>
+  </table>
+
+  <div class="agreement">
+    <strong>Declaration:</strong> I hereby confirm that the information provided above is true and correct to the best of my knowledge.
+    I have read and agree to Clinidea Education's Terms and Conditions. This form was submitted electronically on {{submittedDate}},
+    verified with a live facial photograph and a digital signature captured at the time of submission.
+  </div>
+
+  <div class="sign-row">
+    <div class="sign-box">
+      <div class="sign-label">Live Facial Verification</div>
+      {{facialImg}}
+    </div>
+    <div class="sign-box">
+      <div class="sign-label">Digital Signature</div>
+      {{signatureImg}}
+    </div>
+  </div>
+
+  <p class="footer">This is an electronically generated and digitally signed application form.</p>
+</body>
+</html>
