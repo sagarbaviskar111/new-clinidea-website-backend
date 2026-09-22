@@ -6,29 +6,14 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
+const { uploadToCloudinary } = require('../utils/cloudinary');
 
-// Setup upload directories
-const uploadDir = path.join(__dirname, '../uploads');
-const certificatesDir = path.join(__dirname, '../uploads/certificates');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-if (!fs.existsSync(certificatesDir)) fs.mkdirSync(certificatesDir, { recursive: true });
-
-// Multer storage config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    if (req.path.includes('upload-certificate')) {
-      cb(null, certificatesDir);
-    } else {
-      cb(null, uploadDir);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, (req.adminId || 'admin') + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// All admin uploads (brochures, images, certificates) land here only long enough
+// to be forwarded to Cloudinary — nothing is kept on local disk.
+const uploadTmpDir = path.join(__dirname, '../uploads/tmp');
+if (!fs.existsSync(uploadTmpDir)) fs.mkdirSync(uploadTmpDir, { recursive: true });
 const upload = multer({
-  storage: storage,
+  dest: uploadTmpDir,
   limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
@@ -243,6 +228,11 @@ router.post('/student-portfolios', async (req, res) => {
         isRegistrationConfirmed: true,
         registeredCourse: registeredCourse || '',
         studentId,
+        // Marks this as an admin-provisioned placeholder login, not a real paid
+        // registration — so if this same student later actually registers/pays
+        // online with this email, that flow doesn't wrongly reject them as a
+        // duplicate. Cleared once they genuinely complete registration.
+        createdByAdmin: true,
         createdAt: new Date()
       }
     });
@@ -557,10 +547,18 @@ router.delete('/coupons/:id', async (req, res) => {
 });
 
 router.post('/upload-brochure', uploadMiddleware, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No brochure file uploaded' });
   try {
-    if (!req.file) return res.status(400).json({ error: 'No brochure file uploaded' });
-    res.json({ success: true, url: `/uploads/${req.file.filename}` });
+    // Kept on local disk (not Cloudinary) — brochures are almost always PDFs, and
+    // Cloudinary's account security settings currently block public PDF delivery.
+    const uploadDir = path.join(__dirname, '../uploads');
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const newFilename = (req.adminId || 'admin') + '-' + uniqueSuffix + path.extname(req.file.originalname);
+    fs.renameSync(req.file.path, path.join(uploadDir, newFilename));
+    res.json({ success: true, url: `/uploads/${newFilename}` });
   } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    console.error('Brochure upload error:', err.message);
     res.status(500).json({ error: 'Failed to upload brochure' });
   }
 });
@@ -1075,10 +1073,14 @@ router.post('/content', async (req, res) => {
 });
 
 router.post('/upload-image', uploadMiddleware, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image file uploaded' });
   try {
-    if (!req.file) return res.status(400).json({ error: 'No image file uploaded' });
-    res.json({ success: true, url: `/uploads/${req.file.filename}` });
+    const result = await uploadToCloudinary(req.file.path, 'admin_content_images', req.file.originalname);
+    fs.unlink(req.file.path, () => {});
+    res.json({ success: true, url: result.url });
   } catch (err) {
+    fs.unlink(req.file.path, () => {});
+    console.error('Image upload error:', err.message);
     res.status(500).json({ error: 'Failed to upload image' });
   }
 });
@@ -1125,10 +1127,13 @@ router.post('/upload-certificate', uploadMiddleware, async (req, res) => {
     if (!user || !course) return res.status(404).json({ error: 'User or course not found' });
 
     const certId = `CLIN-${course.slug?.substring(0, 3).toUpperCase() || 'CRS'}-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-    const newFilename = `${certId}${path.extname(file.originalname)}`;
-    const targetPath = path.join(certificatesDir, newFilename);
 
-    fs.renameSync(file.path, targetPath);
+    // Kept on local disk (not Cloudinary) — certificates are almost always PDFs,
+    // and Cloudinary's account security settings currently block public PDF delivery.
+    const certificatesDir = path.join(__dirname, '../uploads/certificates');
+    if (!fs.existsSync(certificatesDir)) fs.mkdirSync(certificatesDir, { recursive: true });
+    const newFilename = `${certId}${path.extname(file.originalname)}`;
+    fs.renameSync(file.path, path.join(certificatesDir, newFilename));
 
     const cert = await db.certificate.create({
       data: {
@@ -1144,6 +1149,7 @@ router.post('/upload-certificate', uploadMiddleware, async (req, res) => {
 
     res.json(cert);
   } catch (error) {
+    if (req.file) fs.unlink(req.file.path, () => {});
     console.error("Upload certificate error:", error);
     res.status(500).json({ error: 'Failed to upload certificate' });
   }

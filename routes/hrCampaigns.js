@@ -5,13 +5,12 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure upload directory exists
+// Kept on local disk (not Cloudinary) — CVs are almost always PDFs, and
+// Cloudinary's account security settings currently block public PDF delivery.
 const uploadDir = path.join(__dirname, '../uploads/campaign_cvs');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
-
-// Setup multer for CV uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir);
@@ -259,7 +258,7 @@ router.post('/hr-campaigns/:id/upload-cvs', upload.array('cvs', 100), async (req
     for (const file of files) {
       // Use original filename (without extension) as mapping ID by default, or just the filename
       const mappingId = path.parse(file.originalname).name;
-      
+
       const attachment = await db.hRCVAttachment.create({
         data: {
           campaignId,

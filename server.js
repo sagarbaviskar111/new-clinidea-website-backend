@@ -316,10 +316,18 @@ app.post('/api/admission', async (req, res) => {
       return res.status(400).json({ error: 'Please fill all required applicant details.' });
     }
 
-    // Email must be unique across registered (paid) students.
+    // Email must be unique across registered (paid) students — but an admin-created
+    // placeholder login (no real payment yet) shouldn't block the same person from
+    // actually registering for real under that email. registrationFeePaid/createdByAdmin
+    // alone aren't a reliable enough signal (older admin-created accounts predate the
+    // createdByAdmin flag), so the real test is whether a genuine enrollment exists —
+    // that's only ever created after an actual completed payment.
     const existingUser = await db.user.findFirst({ where: { email } });
     if (existingUser && existingUser.registrationFeePaid) {
-      return res.status(409).json({ error: 'This email is already registered. Please log in instead of registering again.' });
+      const hasRealEnrollment = await db.enrollment.findFirst({ where: { userId: existingUser.id } });
+      if (hasRealEnrollment) {
+        return res.status(409).json({ error: 'This email is already registered. Please log in instead of registering again.' });
+      }
     }
 
     const admission = await db.admission.create({
@@ -385,8 +393,12 @@ app.post('/api/admission/resume', async (req, res) => {
       if (!candidate.passwordHash || !candidate.applicationFormPdfUrl) continue;
       const matches = await bcrypt.compare(password, candidate.passwordHash);
       if (matches) {
+        // Only treat them as "already registered" if a real enrollment (from an actual
+        // completed payment) exists — an admin-created placeholder account with the same
+        // email shouldn't short-circuit them away from finishing this real payment.
         const existingUser = await db.user.findFirst({ where: { email: normalizedEmail } });
-        if (existingUser && existingUser.registrationFeePaid && existingUser.studentId) {
+        const hasRealEnrollment = existingUser && await db.enrollment.findFirst({ where: { userId: existingUser.id } });
+        if (existingUser && existingUser.registrationFeePaid && existingUser.studentId && hasRealEnrollment) {
           const jwt = require('jsonwebtoken');
           const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-clinidea-key';
           const token = jwt.sign({ id: existingUser.id, email: existingUser.email, role: 'student' }, JWT_SECRET, { expiresIn: '24h' });
@@ -452,7 +464,7 @@ app.post('/api/admission/upload-document', docUpload.single('file'), async (req,
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
     const { uploadToCloudinary } = require('./utils/cloudinary');
-    const result = await uploadToCloudinary(req.file.path, 'admission_documents');
+    const result = await uploadToCloudinary(req.file.path, 'admission_documents', req.file.originalname);
     fs.unlink(req.file.path, () => {});
     res.json({ success: true, url: result.url });
   } catch (error) {

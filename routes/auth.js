@@ -388,8 +388,15 @@ router.post('/verify-course-fee', async (req, res) => {
     let user = await db.user.findFirst({ where: { email } });
     // Email must be unique: a real payment already went through under this email once
     // before, so this is a different registration attempt reusing someone else's account.
+    // An admin-created placeholder login (no real payment behind it) doesn't count —
+    // this payment is that same person actually registering for real, so let it through.
+    // registrationFeePaid/createdByAdmin alone aren't reliable enough (older admin-created
+    // accounts predate the createdByAdmin flag), so check for a genuine prior enrollment too.
     if (user && user.registrationFeePaid) {
-      return res.status(409).json({ error: 'This email is already registered. Please log in instead of registering again.' });
+      const hasRealEnrollment = await db.enrollment.findFirst({ where: { userId: user.id } });
+      if (hasRealEnrollment) {
+        return res.status(409).json({ error: 'This email is already registered. Please log in instead of registering again.' });
+      }
     }
     if (!user) user = await db.user.findFirst({ where: { phone } });
     if (user) {
@@ -401,7 +408,8 @@ router.post('/verify-course-fee', async (req, res) => {
           registrationFeePaid: true,
           isRegistrationConfirmed: true,
           registeredCourse: course,
-          status: 'active'
+          status: 'active',
+          createdByAdmin: false
         }
       });
     } else {

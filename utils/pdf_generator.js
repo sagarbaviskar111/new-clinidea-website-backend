@@ -2,6 +2,16 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
+// Generated PDFs (receipts, certificates, application forms) stay on local disk —
+// Cloudinary's account security settings block public PDF delivery (401), so
+// these are kept out of that migration for now.
+function savePdfLocally(buffer, subDir, fileName) {
+  const dir = path.join(__dirname, '..', 'uploads', subDir);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, fileName), buffer);
+  return `/uploads/${subDir}/${fileName}`;
+}
+
 // Must stay identical to TERMS_AND_CONDITIONS_TEXT in frontend/src/pages/Register.jsx —
 // the same text the student ticks "I agree" to on Step 3 is embedded in their downloaded copy.
 const TERMS_AND_CONDITIONS_TEXT = `
@@ -258,18 +268,11 @@ async function generateReceiptPDF(paymentData) {
   await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
   await page.evaluateHandle('document.fonts.ready');
 
-  const receiptsDir = path.join(__dirname, '..', 'uploads', 'receipts');
-  if (!fs.existsSync(receiptsDir)) {
-    fs.mkdirSync(receiptsDir, { recursive: true });
-  }
+  const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+  await browser.close();
 
   const fileName = `receipt_${paymentData.receiptNo}.pdf`;
-  const filePath = path.join(receiptsDir, fileName);
-  
-  await page.pdf({ path: filePath, format: 'A4', printBackground: true });
-  await browser.close();
-  
-  return `/uploads/receipts/${fileName}`;
+  return savePdfLocally(pdfBuffer, 'receipts', fileName);
 }
 
 async function generateRegistrationReceiptPDF(paymentData) {
@@ -317,22 +320,16 @@ async function generateRegistrationReceiptPDF(paymentData) {
 
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     await page.evaluateHandle('document.fonts.ready');
-    
-    const receiptsDir = path.join(__dirname, '..', 'uploads', 'receipts');
-    if (!fs.existsSync(receiptsDir)) {
-      fs.mkdirSync(receiptsDir, { recursive: true });
-    }
 
     const fileName = `reg_receipt_${safePaymentId.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
-    const filePath = path.join(receiptsDir, fileName);
-    
+
     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '30px', bottom: '30px' } });
     await browser.close();
 
     // Cryptographically sign the PDF if PFX exists
     const { signPdfCryptographically } = require('./signPdf');
     const pfxPath = path.join(__dirname, '..', '..', 'public', 'Signature and Fees recipt', 'TusharPatil.pfx');
-    
+
     let finalBuffer = pdfBuffer;
     try {
       if (fs.existsSync(pfxPath)) {
@@ -344,9 +341,7 @@ async function generateRegistrationReceiptPDF(paymentData) {
       console.error("Cryptographic signing failed:", err);
     }
 
-    fs.writeFileSync(filePath, finalBuffer);
-
-    return `/uploads/receipts/${fileName}`;
+    return savePdfLocally(finalBuffer, 'receipts', fileName);
   } catch (error) {
     console.error("Error generating registration receipt:", error);
     throw error;
@@ -398,22 +393,16 @@ async function generateEnrollmentReceiptPDF(paymentData) {
 
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
     await page.evaluateHandle('document.fonts.ready');
-    
-    const receiptsDir = path.join(__dirname, '..', 'uploads', 'receipts');
-    if (!fs.existsSync(receiptsDir)) {
-      fs.mkdirSync(receiptsDir, { recursive: true });
-    }
 
     const fileName = `enroll_receipt_${safePaymentId.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
-    const filePath = path.join(receiptsDir, fileName);
-    
+
     const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, margin: { top: '30px', bottom: '30px' } });
     await browser.close();
 
     // Cryptographically sign the PDF if PFX exists
     const { signPdfCryptographically } = require('./signPdf');
     const pfxPath = path.join(__dirname, '..', '..', 'public', 'Signature and Fees recipt', 'TusharPatil.pfx');
-    
+
     let finalBuffer = pdfBuffer;
     try {
       if (fs.existsSync(pfxPath)) {
@@ -425,9 +414,7 @@ async function generateEnrollmentReceiptPDF(paymentData) {
       console.error("Cryptographic signing failed:", err);
     }
 
-    fs.writeFileSync(filePath, finalBuffer);
-
-    return `/uploads/receipts/${fileName}`;
+    return savePdfLocally(finalBuffer, 'receipts', fileName);
   } catch (error) {
     console.error("Error generating enrollment receipt:", error);
     throw error;
@@ -566,34 +553,23 @@ async function generateCertificatePDF(certData) {
   // Serialize the PDFDocument to bytes (a Uint8Array)
   const pdfBytes = await pdfDoc.save();
 
-  // Save the new PDF
-  const certsDir = path.join(__dirname, '..', 'uploads', 'certificates');
-  if (!fs.existsSync(certsDir)) {
-    fs.mkdirSync(certsDir, { recursive: true });
-  }
-
   const safeFileName = certData.certificateId.replace(/\//g, '-');
   const fileName = `${safeFileName}.pdf`;
-  const filePath = path.join(certsDir, fileName);
-
   const pdfBuffer = Buffer.from(pdfBytes);
 
   // Try signing the PDF
+  let finalBuffer = pdfBuffer;
   try {
     const { signPdfCryptographically } = require('./signPdf');
     const pfxPath = path.join(__dirname, '..', '..', 'public', 'Signature and Fees recipt', 'TusharPatil.pfx');
     if (fs.existsSync(pfxPath)) {
-      const signedPdfBuffer = await signPdfCryptographically(pdfBuffer, pfxPath, 'PharmaTalentHub@2024');
-      fs.writeFileSync(filePath, signedPdfBuffer);
-    } else {
-      fs.writeFileSync(filePath, pdfBuffer);
+      finalBuffer = await signPdfCryptographically(pdfBuffer, pfxPath, 'PharmaTalentHub@2024');
     }
   } catch (signErr) {
     console.error("Certificate signing failed:", signErr);
-    fs.writeFileSync(filePath, pdfBuffer);
   }
 
-  return `/uploads/certificates/${fileName}`;
+  return savePdfLocally(finalBuffer, 'certificates', fileName);
 }
 
 async function generateApplicationFormPDF(admission) {
@@ -645,14 +621,9 @@ async function generateApplicationFormPDF(admission) {
   // networkidle0 fires — wait for it explicitly so currency amounts don't render blank.
   await page.evaluateHandle('document.fonts.ready');
 
-  const dir = path.join(__dirname, '..', 'uploads', 'application_forms');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
   const fileName = `application_${admission.id}_${Date.now()}.pdf`;
-  const filePath = path.join(dir, fileName);
 
-  await page.pdf({
-    path: filePath,
+  const pdfBuffer = await page.pdf({
     format: 'A4',
     printBackground: true,
     margin: { top: '18px', bottom: '46px', left: '18px', right: '18px' },
@@ -665,7 +636,7 @@ async function generateApplicationFormPDF(admission) {
   });
   await browser.close();
 
-  return `/uploads/application_forms/${fileName}`;
+  return savePdfLocally(pdfBuffer, 'application_forms', fileName);
 }
 
 module.exports = {
