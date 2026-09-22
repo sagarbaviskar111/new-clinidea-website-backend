@@ -133,17 +133,207 @@ router.get('/students', async (req, res) => {
   try {
     const students = await db.user.findMany({
       orderBy: { createdAt: 'desc' },
-      include: {
-        profile: true,
-        enrollments: true,
-        documents: true
-      }
+      include: { enrollments: true }
     });
-    const cleanStudents = students.map(({ password, ...rest }) => rest);
-    res.json(cleanStudents);
+    const enriched = await Promise.all(students.map(async (s) => {
+      const [admission, profile] = await Promise.all([
+        db.admission.findFirst({ where: { userId: s.id }, orderBy: { createdAt: 'desc' } }),
+        db.studentProfile.findFirst({ where: { userId: s.id } })
+      ]);
+      const { password, ...rest } = s;
+      return {
+        ...rest,
+        profile: profile || null,
+        documents: admission?.documents || null
+      };
+    }));
+    res.json(enriched);
   } catch (error) {
     console.error("Fetch students error:", error);
     res.status(500).json({ error: 'Failed to fetch students data' });
+  }
+});
+
+// ----------------------------------------------------------------------
+// STUDENT PORTFOLIOS — full admin control over student portfolio login
+// accounts: list everyone with their documents/payment details, create a
+// new login (id + password) directly, edit details/portfolio, edit
+// credentials, or delete the account entirely.
+//
+// Only students who actually have a portfolio login are listed here — i.e.
+// registrationFeePaid is true, which covers both a real paid/enrolled
+// student and one an admin created directly via the "Create Student Login"
+// button (that endpoint also sets registrationFeePaid: true). Plain leads
+// that never enrolled are excluded.
+// ----------------------------------------------------------------------
+
+router.get('/student-portfolios', async (req, res) => {
+  try {
+    const students = await db.user.findMany({
+      where: { registrationFeePaid: true },
+      orderBy: { createdAt: 'desc' },
+      include: { enrollments: true }
+    });
+    const results = await Promise.all(students.map(async (s) => {
+      const [admission, profile] = await Promise.all([
+        db.admission.findFirst({ where: { userId: s.id }, orderBy: { createdAt: 'desc' } }),
+        db.studentProfile.findFirst({ where: { userId: s.id } })
+      ]);
+      const { password, ...safeUser } = s;
+      return {
+        ...safeUser,
+        city: profile?.city || null,
+        portfolioFilled: !!(profile?.portfolio && Object.keys(profile.portfolio).length),
+        documentsCount: admission ? Object.keys(admission.documents || {}).length : 0,
+        hasApplicationForm: !!admission?.applicationFormPdfUrl,
+      };
+    }));
+    res.json(results);
+  } catch (error) {
+    console.error('Fetch student portfolios error:', error);
+    res.status(500).json({ error: 'Failed to fetch student portfolios' });
+  }
+});
+
+router.get('/student-portfolios/:id', async (req, res) => {
+  try {
+    const user = await db.user.findUnique({ where: { id: req.params.id }, include: { enrollments: true } });
+    if (!user) return res.status(404).json({ error: 'Student not found' });
+    const [admission, profile] = await Promise.all([
+      db.admission.findFirst({ where: { userId: user.id }, orderBy: { createdAt: 'desc' } }),
+      db.studentProfile.findFirst({ where: { userId: user.id } })
+    ]);
+    const { password, ...safeUser } = user;
+    const { passwordHash, ...safeAdmission } = admission || {};
+    res.json({ ...safeUser, admission: admission ? safeAdmission : null, profile: profile || null });
+  } catch (error) {
+    console.error('Fetch student portfolio detail error:', error);
+    res.status(500).json({ error: 'Failed to fetch student details.' });
+  }
+});
+
+router.post('/student-portfolios', async (req, res) => {
+  try {
+    const { fullName, email, phone, password, registeredCourse, studentId: customStudentId } = req.body;
+    if (!fullName || !email || !password) {
+      return res.status(400).json({ error: 'Full name, email and password are required.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+
+    const existingEmail = await db.user.findFirst({ where: { email } });
+    if (existingEmail) return res.status(409).json({ error: 'A student with this email already exists.' });
+
+    const { generateStudentId } = require('./auth');
+    const studentId = customStudentId?.trim() || await generateStudentId(fullName);
+    const existingId = await db.user.findFirst({ where: { studentId } });
+    if (existingId) return res.status(409).json({ error: 'This Student ID is already in use.' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await db.user.create({
+      data: {
+        fullName,
+        email,
+        phone: phone || '',
+        password: hashedPassword,
+        role: 'student',
+        status: 'active',
+        registrationFeePaid: true,
+        isRegistrationConfirmed: true,
+        registeredCourse: registeredCourse || '',
+        studentId,
+        createdAt: new Date()
+      }
+    });
+    await db.studentProfile.create({ data: { userId: user.id, portfolio: {} } });
+
+    const { password: _pw, ...safeUser } = user;
+    res.status(201).json({ success: true, student: safeUser });
+  } catch (error) {
+    console.error('Create student portfolio error:', error);
+    res.status(500).json({ error: 'Failed to create student account.' });
+  }
+});
+
+router.put('/student-portfolios/:id', async (req, res) => {
+  try {
+    const { fullName, phone, registeredCourse, status, portfolio, city } = req.body;
+    const userData = {};
+    if (fullName !== undefined) userData.fullName = fullName;
+    if (phone !== undefined) userData.phone = phone;
+    if (registeredCourse !== undefined) userData.registeredCourse = registeredCourse;
+    if (status !== undefined) userData.status = status;
+
+    let user = Object.keys(userData).length
+      ? await db.user.update({ where: { id: req.params.id }, data: userData })
+      : await db.user.findUnique({ where: { id: req.params.id } });
+    if (!user) return res.status(404).json({ error: 'Student not found' });
+
+    if (portfolio !== undefined || city !== undefined) {
+      const profileData = {};
+      if (portfolio !== undefined) profileData.portfolio = portfolio;
+      if (city !== undefined) profileData.city = city;
+      await db.studentProfile.upsert({
+        where: { userId: req.params.id },
+        update: profileData,
+        create: { userId: req.params.id, ...profileData }
+      });
+    }
+
+    const { password, ...safeUser } = user;
+    res.json({ success: true, student: safeUser });
+  } catch (error) {
+    console.error('Update student portfolio error:', error);
+    res.status(500).json({ error: 'Failed to update student.' });
+  }
+});
+
+router.put('/student-portfolios/:id/credentials', async (req, res) => {
+  try {
+    const { email, studentId, newPassword } = req.body;
+    const data = {};
+
+    if (email) {
+      const conflict = await db.user.findFirst({ where: { email } });
+      if (conflict && conflict.id !== req.params.id) {
+        return res.status(409).json({ error: 'This email is already used by another account.' });
+      }
+      data.email = email;
+    }
+    if (studentId) {
+      const conflict = await db.user.findFirst({ where: { studentId } });
+      if (conflict && conflict.id !== req.params.id) {
+        return res.status(409).json({ error: 'This Student ID is already in use.' });
+      }
+      data.studentId = studentId;
+    }
+    if (newPassword) {
+      if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+      data.password = await bcrypt.hash(newPassword, 10);
+    }
+    if (!Object.keys(data).length) {
+      return res.status(400).json({ error: 'Nothing to update. Provide email, studentId, and/or newPassword.' });
+    }
+
+    const updated = await db.user.update({ where: { id: req.params.id }, data });
+    const { password, ...safeUser } = updated;
+    res.json({ success: true, student: safeUser });
+  } catch (error) {
+    console.error('Update student credentials error:', error);
+    res.status(500).json({ error: 'Failed to update credentials.' });
+  }
+});
+
+router.delete('/student-portfolios/:id', async (req, res) => {
+  try {
+    await db.studentProfile.deleteMany({ where: { userId: req.params.id } });
+    await db.enrollment.deleteMany({ where: { userId: req.params.id } });
+    await db.user.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete student portfolio error:', error);
+    res.status(500).json({ error: 'Failed to delete student.' });
   }
 });
 

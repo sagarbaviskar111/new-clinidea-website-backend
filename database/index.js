@@ -33,6 +33,11 @@ const collections = {
 // MongoDB references created by the SQLite migration. These let existing API
 // responses retain their nested data without relying on an ORM.
 const relations = {
+  // Note: `profile` is deliberately NOT declared here — studentProfile is looked
+  // up by userId (a reverse foreign key), which this include helper's 'one' kind
+  // can't express (it only supports a forward FK: row[field] -> target.id).
+  // Callers that need it fetch it directly: db.studentProfile.findFirst({ where: { userId } }).
+  user: { enrollments: ['many', 'enrollment', 'userId'] },
   batch: { course: ['one', 'course', 'courseId'], enrollments: ['many', 'enrollment', 'batchId'], lmsContents: ['many', 'lMSContent', 'batchId'], batchMentors: ['many', 'batchMentor', 'batchId'] },
   batchMentor: { batch: ['one', 'batch', 'batchId'], mentor: ['one', 'admin', 'mentorId'] },
   classSession: { batch: ['one', 'batch', 'batchId'], mentor: ['one', 'admin', 'mentorId'], attendances: ['many', 'attendance', 'classSessionId'] },

@@ -3,115 +3,263 @@
 <head>
   <meta charset="UTF-8">
   <title>Student Admission Application Form</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
+    * { box-sizing: border-box; }
     body {
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      padding: 40px;
-      color: #333;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 25px;
-      border-bottom: 2px solid #0D9488;
-      padding-bottom: 20px;
-    }
-    .header h1 {
+      font-family: 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      padding: 26px 32px;
+      color: #1e293b;
       margin: 0;
-      color: #0D9488;
-      font-size: 26px;
     }
-    .header p {
-      margin: 5px 0 0;
-      color: #666;
+
+    /* Header */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #0D9488;
+      padding-bottom: 14px;
+      margin-bottom: 14px;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 20px;
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-left img { height: 44px; }
+    .org-name { font-size: 20px; font-weight: 800; color: #0D9488; line-height: 1.2; }
+    .org-tagline { font-size: 11px; color: #64748b; font-weight: 600; margin-top: 2px; }
+    .header-right { text-align: right; font-size: 10.5px; color: #475569; line-height: 1.6; }
+    .header-right .app-id { font-weight: 800; color: #0D9488; font-size: 12px; }
+
+    /* Applicant banner */
+    .applicant-banner {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: linear-gradient(135deg, #f0fdfa, #ecfeff);
+      border: 1px solid #ccfbf1;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
     }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 10px 14px;
-      text-align: left;
-      font-size: 13px;
-    }
-    th {
-      background-color: #f8fafc;
-      font-weight: 600;
-      color: #333;
-    }
-    .section-title {
-      background-color: #0D9488 !important;
-      color: white !important;
-      font-weight: bold;
-      text-align: center;
-      font-size: 15px;
-    }
-    .photo-box {
-      width: 100px;
-      height: 120px;
-      border: 1px solid #ccc;
-      float: right;
-      margin: -60px 0 10px 10px;
-      background: #f8fafc;
-      text-align: center;
+    .applicant-photo {
+      width: 76px;
+      height: 92px;
+      border-radius: 8px;
       overflow: hidden;
+      border: 2px solid #0D9488;
+      background: #fff;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .photo-box img { width: 100%; height: 100%; object-fit: cover; }
-    .sign-row { display: flex; justify-content: space-between; margin-top: 30px; gap: 20px; }
-    .sign-box { width: 48%; border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
-    .sign-box img { max-width: 100%; max-height: 90px; }
-    .sign-label { font-weight: bold; color: #0D9488; margin-bottom: 8px; font-size: 13px; }
-    .agreement { margin-top: 20px; font-size: 12px; color: #444; border: 1px solid #ddd; padding: 12px; border-radius: 6px; background: #f0fdfa; }
-    .footer { text-align: center; margin-top: 30px; font-size: 11px; color: #888; }
+    .applicant-photo img { width: 100%; height: 100%; object-fit: cover; }
+    .applicant-photo .no-img { font-size: 9px; color: #94a3b8; text-align: center; padding: 4px; }
+    .applicant-name { font-size: 19px; font-weight: 800; color: #0f172a; }
+    .applicant-course-chip {
+      display: inline-block;
+      margin-top: 6px;
+      background: #0D9488;
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+
+    /* Form cards */
+    .form-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      page-break-inside: avoid;
+    }
+    .form-card-title {
+      background: #f0fdfa;
+      color: #0D9488;
+      font-weight: 800;
+      font-size: 10.5px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 7px 14px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .field {
+      padding: 9px 14px;
+      border-right: 1px solid #f1f5f9;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .field.wide { grid-column: span 3; }
+    .field-label {
+      display: block;
+      font-size: 8.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: #94a3b8;
+      margin-bottom: 2px;
+      font-weight: 700;
+    }
+    .field-value { display: block; font-size: 12px; color: #1e293b; font-weight: 600; word-break: break-word; }
+
+    /* Declaration */
+    .agreement {
+      margin-top: 6px;
+      margin-bottom: 18px;
+      font-size: 11.5px;
+      line-height: 1.6;
+      color: #334155;
+      border: 1px solid #ccfbf1;
+      padding: 13px 16px;
+      border-radius: 8px;
+      background: #f0fdfa;
+    }
+    .agreement strong { color: #0D9488; }
+
+    /* Terms & conditions */
+    .terms-section { margin-top: 22px; page-break-before: always; }
+    .terms-wrap {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 18px 22px;
+      background: #fff;
+    }
+    .terms-title-block {
+      text-align: center;
+      padding-bottom: 14px;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #0D9488;
+    }
+    .terms-main-title { font-size: 16px; font-weight: 800; color: #0D9488; letter-spacing: 0.5px; }
+    .terms-subtitle { font-size: 11.5px; font-weight: 700; color: #334155; margin-top: 4px; }
+    .terms-meta { font-size: 9.5px; color: #64748b; margin-top: 6px; }
+    .terms-h1 {
+      font-size: 12px;
+      font-weight: 800;
+      color: #fff;
+      background: #0D9488;
+      padding: 6px 10px;
+      border-radius: 5px;
+      margin: 16px 0 8px;
+      page-break-after: avoid;
+    }
+    .terms-h1-num { display: inline-block; margin-right: 7px; }
+    .terms-h2 {
+      font-size: 10.5px;
+      font-weight: 800;
+      color: #0D9488;
+      margin: 10px 0 4px;
+      page-break-after: avoid;
+    }
+    .terms-p { font-size: 9.5px; line-height: 1.55; color: #334155; margin: 0 0 6px; text-align: justify; }
+
+    /* Signatures */
+    .sign-row { display: flex; justify-content: space-between; margin-top: 24px; gap: 20px; }
+    .sign-box { width: 48%; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; text-align: center; background: #fafafa; }
+    .sign-box img { max-width: 100%; max-height: 90px; border-radius: 4px; }
+    .sign-box .no-img { font-size: 11px; color: #94a3b8; }
+    .sign-label { font-weight: 800; color: #0D9488; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .sign-note { margin-top: 8px; font-size: 9px; color: #94a3b8; }
+
+    .footer { text-align: center; margin-top: 26px; font-size: 10.5px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 12px; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Clinidea Education</h1>
-    <p>Student Admission &mdash; Application Form</p>
+  <div class="header-bar">
+    <div class="header-left">
+      {{logoImg}}
+      <div>
+        <div class="org-name">Clinidea Education</div>
+        <div class="org-tagline">Student Admission &mdash; Application Form</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="app-id">Ref: {{applicationId}}</div>
+      <div>Submitted: {{submittedDate}}</div>
+    </div>
   </div>
 
-  <div class="photo-box">
-    {{photoImg}}
+  <div class="applicant-banner">
+    <div class="applicant-photo">{{photoImg}}</div>
+    <div>
+      <div class="applicant-name">{{fullName}}</div>
+      <span class="applicant-course-chip">{{course}}</span>
+    </div>
   </div>
 
-  <table>
-    <tr><td colspan="2" class="section-title">A. Applicant Details</td></tr>
-    <tr><td width="35%"><strong>Full Name</strong></td><td>{{fullName}}</td></tr>
-    <tr><td><strong>Date of Birth</strong></td><td>{{dateOfBirth}}</td></tr>
-    <tr><td><strong>Gender</strong></td><td>{{gender}}</td></tr>
-    <tr><td><strong>Mobile Number</strong></td><td>{{mobileNumber}}</td></tr>
-    <tr><td><strong>Alternate / WhatsApp Number</strong></td><td>{{alternateNumber}}</td></tr>
-    <tr><td><strong>E-mail ID</strong></td><td>{{email}}</td></tr>
-    <tr><td><strong>Residential Address</strong></td><td>{{address}}</td></tr>
-    <tr><td><strong>City / State / Country</strong></td><td>{{city}}, {{state}}, {{country}}</td></tr>
-    <tr><td><strong>PIN / ZIP Code</strong></td><td>{{pincode}}</td></tr>
-    <tr><td><strong>Highest Qualification</strong></td><td>{{qualification}}</td></tr>
-    <tr><td><strong>Institution</strong></td><td>{{institution}}</td></tr>
-    <tr><td><strong>Year of Passing</strong></td><td>{{yearOfPassing}}</td></tr>
-    <tr><td><strong>Aadhaar / Government ID Number</strong></td><td>{{govtIdNumber}}</td></tr>
-    <tr><td><strong>PAN Number</strong></td><td>{{panNumber}}</td></tr>
-    <tr><td><strong>Course Applied For</strong></td><td>{{course}}</td></tr>
-  </table>
+  <div class="form-card">
+    <div class="form-card-title">Personal Information</div>
+    <div class="form-grid">
+      <div class="field"><span class="field-label">Date of Birth</span><span class="field-value">{{dateOfBirth}}</span></div>
+      <div class="field"><span class="field-label">Gender</span><span class="field-value">{{gender}}</span></div>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <div class="form-card-title">Contact Details</div>
+    <div class="form-grid">
+      <div class="field"><span class="field-label">Mobile Number</span><span class="field-value">{{mobileNumber}}</span></div>
+      <div class="field"><span class="field-label">Alternate / WhatsApp</span><span class="field-value">{{alternateNumber}}</span></div>
+      <div class="field wide"><span class="field-label">E-mail ID</span><span class="field-value">{{email}}</span></div>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <div class="form-card-title">Residential Address</div>
+    <div class="form-grid">
+      <div class="field wide"><span class="field-label">Address</span><span class="field-value">{{address}}</span></div>
+      <div class="field"><span class="field-label">City</span><span class="field-value">{{city}}</span></div>
+      <div class="field"><span class="field-label">State</span><span class="field-value">{{state}}</span></div>
+      <div class="field"><span class="field-label">Country</span><span class="field-value">{{country}}</span></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><span class="field-label">PIN / ZIP Code</span><span class="field-value">{{pincode}}</span></div>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <div class="form-card-title">Academic Background</div>
+    <div class="form-grid">
+      <div class="field wide"><span class="field-label">Highest Qualification</span><span class="field-value">{{qualification}}</span></div>
+      <div class="field"><span class="field-label">Institution</span><span class="field-value">{{institution}}</span></div>
+      <div class="field"><span class="field-label">Year of Passing</span><span class="field-value">{{yearOfPassing}}</span></div>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <div class="form-card-title">Identification Details</div>
+    <div class="form-grid">
+      <div class="field"><span class="field-label">Aadhaar / Government ID</span><span class="field-value">{{govtIdNumber}}</span></div>
+      <div class="field"><span class="field-label">PAN Number</span><span class="field-value">{{panNumber}}</span></div>
+    </div>
+  </div>
 
   <div class="agreement">
     <strong>Declaration:</strong> I hereby confirm that the information provided above is true and correct to the best of my knowledge.
-    I have read and agree to Clinidea Education's Terms and Conditions. This form was submitted electronically on {{submittedDate}},
+    I have read and agree to Clinidea Education's Terms and Conditions below. This form was submitted electronically on {{submittedDate}},
     verified with a live facial photograph and a digital signature captured at the time of submission.
+  </div>
+
+  <div class="terms-section">
+    <div class="terms-wrap">{{termsHtml}}</div>
   </div>
 
   <div class="sign-row">
     <div class="sign-box">
       <div class="sign-label">Live Facial Verification</div>
       {{facialImg}}
+      <div class="sign-note">Captured live at the time of submission</div>
     </div>
     <div class="sign-box">
       <div class="sign-label">Digital Signature</div>
       {{signatureImg}}
+      <div class="sign-note">Provided by the applicant as consent</div>
     </div>
   </div>
 
-  <p class="footer">This is an electronically generated and digitally signed application form.</p>
+  <p class="footer">This is an electronically generated and digitally signed application form issued by Clinidea Education.</p>
 </body>
 </html>

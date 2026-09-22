@@ -1,9 +1,16 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const db = require('../database');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-clinidea-key';
+
+const portfolioImageTmpDir = path.join(__dirname, '..', 'uploads', 'tmp');
+if (!fs.existsSync(portfolioImageTmpDir)) fs.mkdirSync(portfolioImageTmpDir, { recursive: true });
+const portfolioImageUpload = multer({ dest: portfolioImageTmpDir, limits: { fileSize: 8 * 1024 * 1024 } });
 
 function authenticate(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
@@ -54,7 +61,7 @@ router.get('/student/profile', authenticateStudent, async (req, res) => {
   try {
     const [profile, user] = await Promise.all([
       db.studentProfile.findUnique({ where: { userId: req.userId } }),
-      db.user.findUnique({ where: { id: req.userId }, select: { fullName: true, email: true, phone: true, registrationFeePaid: true } })
+      db.user.findUnique({ where: { id: req.userId }, select: { fullName: true, email: true, phone: true, registrationFeePaid: true, studentId: true, registeredCourse: true } })
     ]);
     res.json({ profile: profile ? { ...profile, user } : { user } });
   } catch (error) {
@@ -71,6 +78,75 @@ router.post('/student/profile', authenticateStudent, async (req, res) => {
     res.json({ success: true, profile });
   } catch (error) {
     res.status(500).json({ error: 'Failed to save student profile' });
+  }
+});
+
+// Lets a student edit their own core account details (name/email/phone) and,
+// optionally, change their login password — the "resume header" info that
+// lives on the user record itself rather than in the portfolio JSON blob.
+router.put('/student/account', authenticateStudent, async (req, res) => {
+  try {
+    const bcrypt = require('bcryptjs');
+    const { fullName, email, phone, currentPassword, newPassword } = req.body;
+
+    const user = await db.user.findUnique({ where: { id: req.userId } });
+    if (!user) return res.status(404).json({ error: 'Account not found' });
+
+    const data = {};
+    if (fullName !== undefined && fullName.trim()) data.fullName = fullName.trim();
+    if (phone !== undefined) data.phone = phone.trim();
+
+    if (email !== undefined && email.trim() && email.trim() !== user.email) {
+      const conflict = await db.user.findFirst({ where: { email: email.trim() } });
+      if (conflict && conflict.id !== req.userId) {
+        return res.status(409).json({ error: 'This email is already in use by another account.' });
+      }
+      data.email = email.trim();
+    }
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Please enter your current password to set a new one.' });
+      }
+      const matches = await bcrypt.compare(currentPassword, user.password);
+      if (!matches) {
+        return res.status(400).json({ error: 'Current password is incorrect.' });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+      }
+      data.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    if (!Object.keys(data).length) {
+      return res.status(400).json({ error: 'Nothing to update.' });
+    }
+
+    const updated = await db.user.update({ where: { id: req.userId }, data });
+    res.json({
+      success: true,
+      user: { fullName: updated.fullName, email: updated.email, phone: updated.phone, studentId: updated.studentId, registeredCourse: updated.registeredCourse, registrationFeePaid: updated.registrationFeePaid }
+    });
+  } catch (error) {
+    console.error('Student account update error:', error.message);
+    res.status(500).json({ error: 'Failed to update account details.' });
+  }
+});
+
+// Profile / background image upload for the student's public portfolio page.
+// Returns just the hosted URL — the caller merges it into their portfolio JSON
+// and saves via POST /student/profile like any other portfolio field.
+router.post('/student/portfolio/upload-image', authenticateStudent, portfolioImageUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    const { uploadToCloudinary } = require('../utils/cloudinary');
+    const result = await uploadToCloudinary(req.file.path, 'student_portfolio_images');
+    fs.unlink(req.file.path, () => {});
+    res.json({ success: true, url: result.url });
+  } catch (error) {
+    fs.unlink(req.file.path, () => {});
+    console.error('Portfolio image upload error:', error.message);
+    res.status(500).json({ error: 'Failed to upload image' });
   }
 });
 

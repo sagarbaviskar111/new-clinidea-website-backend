@@ -284,6 +284,25 @@ app.get('/api/certificate/verify/:certificate_id', async (req, res) => {
   }
 });
 
+// Public student portfolio (resume-style page) — looked up by the human-readable
+// Student ID, not the Mongo _id. Only exposes public-appropriate fields.
+app.get('/api/public/student-portfolio/:studentId', async (req, res) => {
+  try {
+    const user = await db.user.findFirst({ where: { studentId: req.params.studentId } });
+    if (!user) return res.status(404).json({ error: 'Portfolio not found' });
+    const profile = await db.studentProfile.findFirst({ where: { userId: user.id } });
+    res.json({
+      studentId: user.studentId,
+      fullName: user.fullName,
+      course: user.registeredCourse,
+      portfolio: profile?.portfolio || {}
+    });
+  } catch (error) {
+    console.error('Public portfolio fetch error:', error.message);
+    res.status(500).json({ error: 'Failed to load portfolio' });
+  }
+});
+
 // Student Admission Form (multi-step, saved progressively per step)
 app.post('/api/admission', async (req, res) => {
   try {
@@ -295,6 +314,12 @@ app.post('/api/admission', async (req, res) => {
 
     if (!fullName || !dateOfBirth || !mobileNumber || !email || !gender) {
       return res.status(400).json({ error: 'Please fill all required applicant details.' });
+    }
+
+    // Email must be unique across registered (paid) students.
+    const existingUser = await db.user.findFirst({ where: { email } });
+    if (existingUser && existingUser.registrationFeePaid) {
+      return res.status(409).json({ error: 'This email is already registered. Please log in instead of registering again.' });
     }
 
     const admission = await db.admission.create({
@@ -316,10 +341,19 @@ app.post('/api/admission', async (req, res) => {
 
 app.put('/api/admission/:id', async (req, res) => {
   try {
-    const admission = await db.admission.update({
+    const data = { ...req.body };
+    // Never persist the plaintext password — only a hash, used later so a student can
+    // resume straight to Payment if they abandon the flow after submitting the form.
+    if (data.password) {
+      const bcrypt = require('bcryptjs');
+      data.passwordHash = await bcrypt.hash(data.password, 10);
+      delete data.password;
+    }
+    const updated = await db.admission.update({
       where: { id: req.params.id },
-      data: req.body
+      data
     });
+    const { passwordHash, ...admission } = updated;
     res.json({ success: true, admission });
   } catch (error) {
     console.error('Admission update error:', error.message);
@@ -327,10 +361,55 @@ app.put('/api/admission/:id', async (req, res) => {
   }
 });
 
+// Resume an abandoned admission straight to the Payment step. Only allowed once the
+// applicant has completed the Application Form step (Section E + terms + facial +
+// signature), matching the email/password they set on Steps 1 & 2.
+// If this applicant already completed registration and paid (a student account with a
+// studentId already exists for their email), log them straight into their student
+// portfolio instead of walking them into the Payment step again.
+app.post('/api/admission/resume', async (req, res) => {
+  try {
+    const bcrypt = require('bcryptjs');
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    const normalizedEmail = String(email).trim();
+
+    const candidates = await db.admission.findMany({
+      where: { email: normalizedEmail },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    for (const candidate of candidates) {
+      if (!candidate.passwordHash || !candidate.applicationFormPdfUrl) continue;
+      const matches = await bcrypt.compare(password, candidate.passwordHash);
+      if (matches) {
+        const existingUser = await db.user.findFirst({ where: { email: normalizedEmail } });
+        if (existingUser && existingUser.registrationFeePaid && existingUser.studentId) {
+          const jwt = require('jsonwebtoken');
+          const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-clinidea-key';
+          const token = jwt.sign({ id: existingUser.id, email: existingUser.email, role: 'student' }, JWT_SECRET, { expiresIn: '24h' });
+          return res.json({ success: true, alreadyRegistered: true, token, studentId: existingUser.studentId });
+        }
+
+        const { passwordHash, ...safeAdmission } = candidate;
+        return res.json({ success: true, admission: safeAdmission });
+      }
+    }
+
+    res.status(404).json({ error: 'No submitted application found for this email and password. Make sure you completed the Application Form step before trying to resume.' });
+  } catch (error) {
+    console.error('Admission resume error:', error.message);
+    res.status(500).json({ error: 'Failed to resume application.' });
+  }
+});
+
 app.get('/api/admission/:id', async (req, res) => {
   try {
-    const admission = await db.admission.findUnique({ where: { id: req.params.id } });
-    if (!admission) return res.status(404).json({ error: 'Admission application not found' });
+    const found = await db.admission.findUnique({ where: { id: req.params.id } });
+    if (!found) return res.status(404).json({ error: 'Admission application not found' });
+    const { passwordHash, ...admission } = found;
     res.json(admission);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch admission application.' });

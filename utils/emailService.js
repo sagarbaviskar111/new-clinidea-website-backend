@@ -86,6 +86,25 @@ const sendRegistrationReceipt = async (user, amount, transactionId, pdfPath = nu
   await sendEmail(adminEmail, "New Registration Alert", wrapHtml("New Registration", `<p>Student <b>${user.fullName}</b> (${user.phone}) has just paid the registration fee.</p>`));
 };
 
+const sendCourseFeeConfirmation = async (user, summary) => {
+  const content = `
+    <h3>Hello ${user.fullName},</h3>
+    <p>Welcome to Clinidea Education! Your registration for <strong>${summary.courseName}</strong> is confirmed.</p>
+    <div class="receipt-box">
+      <div class="receipt-row"><span>Student ID</span><span>${summary.studentId}</span></div>
+      <div class="receipt-row"><span>Course</span><span>${summary.courseName}</span></div>
+      <div class="receipt-row"><span>Total Fees</span><span>₹${summary.totalFees}</span></div>
+      <div class="receipt-row"><span>Amount Paid</span><span>₹${summary.amountPaid}</span></div>
+      ${summary.remainingFees > 0 ? `<div class="receipt-row"><span>Remaining Balance</span><span>₹${summary.remainingFees}</span></div>` : ''}
+      <div class="receipt-row"><span>Transaction ID</span><span>${summary.transactionId || 'N/A'}</span></div>
+    </div>
+    <p>Please keep your Student ID handy — you'll need it to log in and to share your public student portfolio link.</p>
+    <a href="https://clinidea.in/login" class="btn">Login to Your Account</a>
+  `;
+  await sendEmail(user.email, `Registration Confirmed - Student ID ${summary.studentId} - Clinidea Education`, wrapHtml("Registration Confirmed", content));
+  await sendEmail(adminEmail, "New Student Registration", wrapHtml("New Registration", `<p>Student <b>${user.fullName}</b> (${summary.studentId}) registered for <b>${summary.courseName}</b> — paid ₹${summary.amountPaid}.</p>`));
+};
+
 const sendEnrollmentReceipt = async (user, enrollment, transactionId, pdfPath = null) => {
   const content = `
     <h3>Hello ${user.fullName},</h3>
@@ -163,6 +182,7 @@ const sendEnquiryReminder = async (lead, reminderNumber) => {
 
 module.exports = {
   sendRegistrationReceipt,
+  sendCourseFeeConfirmation,
   sendEnrollmentReceipt,
   sendEnquiryThankYou,
   sendQuizResult,

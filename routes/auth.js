@@ -385,7 +385,13 @@ router.post('/verify-course-fee', async (req, res) => {
     const breakdown = await computeFeeBreakdown({ course, paymentMode, couponCode });
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let user = await db.user.findFirst({ where: { email } }) || await db.user.findFirst({ where: { phone } });
+    let user = await db.user.findFirst({ where: { email } });
+    // Email must be unique: a real payment already went through under this email once
+    // before, so this is a different registration attempt reusing someone else's account.
+    if (user && user.registrationFeePaid) {
+      return res.status(409).json({ error: 'This email is already registered. Please log in instead of registering again.' });
+    }
+    if (!user) user = await db.user.findFirst({ where: { phone } });
     if (user) {
       user = await db.user.update({
         where: { id: user.id },
@@ -484,26 +490,37 @@ router.post('/verify-course-fee', async (req, res) => {
 
     const token = jwt.sign({ id: user.id, email: user.email, role: 'student' }, JWT_SECRET, { expiresIn: '24h' });
 
+    const summary = {
+      studentId: user.studentId,
+      courseName: course,
+      totalFees: breakdown.discountedTotal,
+      amountPaid: breakdown.amountNow,
+      remainingFees: Math.max(breakdown.discountedTotal - breakdown.amountNow, 0),
+      transactionId: payment.transactionId,
+      firstInstallmentFee,
+      remainingInstallments: remainingInstallments.map((inst, i) => ({
+        amount: inst.amount,
+        feeAmount: inst.feeAmount,
+        daysAfter: inst.daysAfter,
+        installmentNo: i + 2
+      }))
+    };
+
+    try {
+      if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        const emailService = require('../utils/emailService');
+        await emailService.sendCourseFeeConfirmation(user, summary);
+      }
+    } catch (err) {
+      console.error('Course fee confirmation email failed:', err.message);
+    }
+
     res.json({
       success: true,
       message: 'Registration successful!',
       token,
       user,
-      summary: {
-        studentId: user.studentId,
-        courseName: course,
-        totalFees: breakdown.discountedTotal,
-        amountPaid: breakdown.amountNow,
-        remainingFees: Math.max(breakdown.discountedTotal - breakdown.amountNow, 0),
-        transactionId: payment.transactionId,
-        firstInstallmentFee,
-        remainingInstallments: remainingInstallments.map((inst, i) => ({
-          amount: inst.amount,
-          feeAmount: inst.feeAmount,
-          daysAfter: inst.daysAfter,
-          installmentNo: i + 2
-        }))
-      }
+      summary
     });
   } catch (error) {
     console.error('Verify course fee error:', error.message);
@@ -531,3 +548,4 @@ router.get('/me', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.generateStudentId = generateStudentId;
