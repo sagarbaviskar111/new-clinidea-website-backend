@@ -39,7 +39,18 @@ app.use(helmet({
 app.use(compression());
 
 // CORS
-const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', process.env.FRONTEND_URL].filter(Boolean);
+// The production domains are hardcoded (not left to a single FRONTEND_URL env var)
+// because that value has drifted to a stale dev URL on the VPS before — a wrong or
+// missing env var would otherwise silently lock out the real site. FRONTEND_URL can
+// still be set to add another origin (e.g. a staging domain) on top of these.
+const allowedOrigins = [
+  'https://clinidea.in',
+  'https://www.clinidea.in',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  process.env.FRONTEND_URL
+].filter(Boolean);
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
